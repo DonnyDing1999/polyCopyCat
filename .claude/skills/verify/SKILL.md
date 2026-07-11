@@ -37,6 +37,17 @@ polycopycat watch 0x<40位hex> --interval 0.5 --backfill 1 --base-url http://127
   （应为毫秒级）、`transport.abort()` 掐线后 ~1s 重连并触发对账轮询
   补漏（配大 `--interval` 才能证明是对账而不是常规轮询捞到的）、
   同一笔成交跨通道只输出一次
+- `run --config`（跟单引擎，纸面）：mock 再加 CLOB 两个端点
+  `/markets/{cid}`（tick/最小量/negRisk/accepting）和 `/book`
+  （bids/asks 档位），`/positions` 按 user 过滤返回目标持仓。
+  配置 data_api_url/clob_url/ws_url 全指向 mock。验证点：推目标
+  BUY → 纸面按盘口逐档成交且滑点正确；目标 SELL x% → 跟随卖出
+  自己持仓的 x%（注意镜像=启动快照+之后的成交累加）；尘埃单被过滤；
+  超敞口被风控拦截；touch 停机文件即全停；SIGINT 后 `report
+  --ledger` 对得上每一笔。注意：账本删掉重建时要连 -wal/-shm
+  一起删，否则 sqlite 报 disk I/O error
+- 实盘防线在 CLI 层验证：未确认风险 / 缺私钥 → 干净报错退出 1；
+  `--paper` 能把 live 配置强制转纸面。真实下单路径无法离线验证
 
 ## 坑
 

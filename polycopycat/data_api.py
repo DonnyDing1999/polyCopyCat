@@ -19,7 +19,7 @@ from typing import Any
 import requests
 
 from ._http import HttpError, get_json
-from .models import Trade
+from .models import Position, Trade
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +106,27 @@ class DataApiClient:
         if not isinstance(data, list):
             raise DataApiError(f"预期 /trades 返回列表，实际是: {data!r:.200}")
         return [Trade.from_api(item) for item in data if isinstance(item, dict)]
+
+    def get_positions(
+        self,
+        user: str,
+        *,
+        limit: int = MAX_PAGE_LIMIT,
+        offset: int = 0,
+        market: str | None = None,
+    ) -> list[Position]:
+        """读取某地址当前持仓（跟单里用于目标持仓镜像与实盘对账）。"""
+        params: dict[str, Any] = {
+            "user": normalize_address(user),
+            "limit": max(1, min(int(limit), MAX_PAGE_LIMIT)),
+            "offset": max(0, int(offset)),
+        }
+        if market:
+            params["market"] = market
+        data = self._get("/positions", params)
+        if not isinstance(data, list):
+            raise DataApiError(f"预期 /positions 返回列表，实际是: {data!r:.200}")
+        return [Position.from_api(item) for item in data if isinstance(item, dict)]
 
     def _get(self, path: str, params: dict[str, Any]) -> Any:
         try:

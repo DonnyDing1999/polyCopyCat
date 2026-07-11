@@ -106,3 +106,28 @@ def test_client_error_is_not_retried():
     with pytest.raises(DataApiError):
         client.get_trades(ADDR)
     assert len(session.requests) == 1
+
+
+def test_get_positions_builds_params_and_parses():
+    payload = [{
+        "proxyWallet": ADDR, "asset": "tok1", "conditionId": "0xcond",
+        "size": "120.5", "avgPrice": 0.42, "curPrice": "0.55",
+        "realizedPnl": "3.2", "redeemable": True,
+        "title": "Will X happen?", "outcome": "Yes",
+    }]
+    client, session = make_client([FakeResponse(payload=payload)])
+    positions = client.get_positions(ADDR)
+
+    url, params = session.requests[0]
+    assert url == "https://fake.test/positions"
+    assert params["user"] == ADDR.lower()
+    assert len(positions) == 1
+    p = positions[0]
+    assert p.size == 120.5 and p.avg_price == 0.42
+    assert p.redeemable is True and p.outcome == "Yes"
+
+
+def test_get_positions_non_list_raises():
+    client, _ = make_client([FakeResponse(payload={"error": "x"})])
+    with pytest.raises(DataApiError):
+        client.get_positions(ADDR)

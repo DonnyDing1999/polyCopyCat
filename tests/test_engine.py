@@ -121,11 +121,61 @@ def test_risk_block_notifies(rig):
     assert ledger.positions() == []
 
 
-def test_sell_skipped_in_m0(rig):
+def seed_buy(engine, ledger):
+    """先跟一笔买入建仓（48.07 份 @ 平均 0.5138）。"""
+    submit_sync(engine, make_trade(tx="0xseed"))
+    assert ledger.positions()[0].size == 48.07
+
+
+def test_sell_follows_target_fraction(rig):
+    engine, ledger, notifier, _ = rig
+    seed_buy(engine, ledger)
+    engine._mirror.replace(ADDR, {"tok1": 1000})
+    submit_sync(engine, make_trade(tx="0x5", side="SELL", size=500))  # 目标卖出 50%
+    position = ledger.positions()[0]
+    assert abs(position.size - 24.04) < 1e-9  # 48.07 - 24.03
+    assert position.realized_pnl < 0  # 0.49 卖出低于建仓均价 0.5138
+    assert any("跟随卖出 50%" in m for m in notifier.messages)
+
+
+def test_sell_without_own_position_skipped(rig):
     engine, ledger, _, _ = rig
-    submit_sync(engine, make_trade(tx="0x5", side="SELL"))
+    engine._mirror.replace(ADDR, {"tok1": 1000})
+    submit_sync(engine, make_trade(tx="0x5", side="SELL", size=500))
+    assert ledger.signal_counts() == {"skipped": 1}
+
+
+def test_sell_unknown_mirror_closes_all(rig):
+    engine, ledger, notifier, _ = rig
+    seed_buy(engine, ledger)
+    engine._mirror.replace(ADDR, {})  # 镜像没有记录
+    submit_sync(engine, make_trade(tx="0x5", side="SELL", size=100))
+    assert ledger.positions() == []  # 全平
+    assert any("跟随卖出 100%" in m for m in notifier.messages)
+
+
+def test_sell_dust_remainder_closes_all(rig):
+    engine, ledger, _, _ = rig
+    seed_buy(engine, ledger)
+    engine._mirror.replace(ADDR, {"tok1": 1000})
+    # 跟随 90% 应卖 43.26，但剩 4.81 份 < 最小单 5 份 → 全平
+    submit_sync(engine, make_trade(tx="0x5", side="SELL", size=900))
+    assert ledger.positions() == []
+
+
+def test_sell_can_be_disabled_by_config(rig):
+    engine, ledger, _, _ = rig
+    seed_buy(engine, ledger)
+    engine._filter._config.follow_sells = False
+    submit_sync(engine, make_trade(tx="0x5", side="SELL", size=500))
     counts = ledger.signal_counts()
-    assert counts == {"skipped": 1}
+    assert counts.get("filtered") == 1
+
+
+def test_mirror_updated_even_for_filtered_signals(rig):
+    engine, _, _, _ = rig
+    submit_sync(engine, make_trade(tx="0x9", size=10, price=0.5))  # $5 尘埃单被过滤
+    assert engine._mirror.size_of(ADDR, "tok1") == 10  # 但镜像照常累加
 
 
 def test_no_liquidity_records_no_fill(rig):
@@ -153,3 +203,53 @@ def test_unwatched_wallet_ignored(rig):
     object.__setattr__(other, "proxy_wallet", "0x" + "b" * 40)
     engine.submit(other)  # 不入队
     assert engine._queue.qsize() == 0
+
+
+class FakeDataClient:
+    def __init__(self, positions_by_user):
+        self.positions_by_user = {k.lower(): v for k, v in positions_by_user.items()}
+        self.calls = []
+
+    def get_positions(self, user, **kwargs):
+        self.calls.append(user.lower())
+        return self.positions_by_user.get(user.lower(), [])
+
+
+def make_position(asset="tok1", size=1000.0, wallet=ADDR, redeemable=False, avg=0.4):
+    from polycopycat.models import Position
+
+    return Position(
+        proxy_wallet=wallet, asset=asset, condition_id="0xcond", size=size,
+        avg_price=avg, realized_pnl=1.5, redeemable=redeemable,
+        title="Will X happen?", outcome="Yes",
+    )
+
+
+def test_reconcile_refreshes_mirror(rig):
+    engine, ledger, _, clob = rig
+    engine._data = FakeDataClient({ADDR: [make_position(size=777)]})
+    engine.reconcile_once()
+    assert engine._mirror.size_of(ADDR, "tok1") == 777
+
+
+def test_reconcile_live_syncs_ledger_and_notifies_redeemable_once():
+    own = "0x" + "c" * 40
+    config = make_config(mode="live")
+    clob = FakeClob()
+    ledger = Ledger(":memory:")
+    notifier = ListNotifier()
+    data = FakeDataClient({
+        ADDR: [make_position(size=500)],
+        own: [make_position(asset="tokX", size=88, wallet=own, redeemable=True, avg=0.3)],
+    })
+    engine = CopyEngine(config, clob=clob, ledger=ledger, executor=PaperExecutor(clob),
+                        notifier=notifier, data_client=data, own_address=own)
+    engine.reconcile_once()
+    engine.reconcile_once()  # 第二轮不应重复提醒
+
+    position = ledger.positions()[0]
+    assert position.token_id == "tokX" and position.size == 88
+    assert abs(position.avg_cost - 0.3) < 1e-9
+    redeems = [m for m in notifier.messages if "可赎回" in m]
+    assert len(redeems) == 1 and "88.00" in redeems[0]
+    ledger.close()

@@ -25,6 +25,23 @@ _TICK_LITERALS = {"0.1", "0.01", "0.001", "0.0001"}
 _POLYGON_CHAIN_ID = 137
 
 
+def own_trading_address(config: EngineConfig) -> str | None:
+    """实盘对账用的资金地址：优先 live.funder，EOA 模式从私钥推导。"""
+    live = config.live
+    if live.funder:
+        return live.funder
+    private_key = os.environ.get(live.private_key_env, "").strip()
+    if not private_key:
+        return None
+    try:
+        from eth_account import Account  # py-clob-client 的传递依赖
+
+        return Account.from_key(private_key).address.lower()
+    except Exception as exc:  # noqa: BLE001 —— 推导失败只是少了对账，不阻断
+        logger.warning("无法从私钥推导地址，实盘持仓对账将被跳过: %s", exc)
+        return None
+
+
 class LiveExecutor:
     mode = "live"
     applies_fills = False  # 实盘持仓以对账为准，见模块 docstring

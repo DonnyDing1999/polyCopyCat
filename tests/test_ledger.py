@@ -84,6 +84,25 @@ def test_oversell_clamped(ledger):
     assert ledger.positions() == []  # size=0 不再显示
 
 
+def test_sync_positions_replaces_table(ledger):
+    from polycopycat.models import Position
+
+    sid, _ = ledger.record_signal(make_signal("0x1"))
+    ledger.record_order(sid, intent(size=100), mode="paper", status="filled",
+                        filled_size=100, avg_price=0.5)
+    snapshot = [
+        Position(proxy_wallet=ADDR, asset="tokA", condition_id="0xc9", size=42,
+                 avg_price=0.33, realized_pnl=2.5, title="A", outcome="Yes"),
+        Position(proxy_wallet=ADDR, asset="tokB", condition_id="0xc9", size=0,
+                 avg_price=0.5, title="B", outcome="No"),  # size 0 不落表
+    ]
+    ledger.sync_positions(snapshot)
+    positions = ledger.positions()
+    assert [p.token_id for p in positions] == ["tokA"]
+    assert positions[0].size == 42 and abs(positions[0].avg_cost - 0.33) < 1e-9
+    assert ledger.position_size("tok1") == 0  # 旧持仓被覆盖清掉
+
+
 def test_live_submitted_does_not_touch_positions(ledger):
     sid, _ = ledger.record_signal(make_signal("0x1"))
     ledger.record_order(sid, intent(size=100), mode="live", status="submitted",

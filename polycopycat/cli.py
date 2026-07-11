@@ -124,8 +124,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     clob = ClobReadClient(base_url=args.clob_url or config.clob_url)
     ledger = Ledger(config.ledger_path)
     notifier = build_notifier(config.notify)
+    own_address = None
     if config.mode == "live":
-        from .engine.live import LiveExecutor
+        from .engine.live import LiveExecutor, own_trading_address
 
         try:
             executor = LiveExecutor(config, host=args.clob_url or config.clob_url)
@@ -133,6 +134,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"无法启动实盘模式：{exc}", file=sys.stderr)
             ledger.close()
             return 1
+        own_address = own_trading_address(config)
         print(
             "⚠️  实盘模式：会用真实资金在 Polymarket 下单，风控上限见配置。",
             file=sys.stderr,
@@ -141,7 +143,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         executor = PaperExecutor(clob)
 
     engine = CopyEngine(
-        config, clob=clob, ledger=ledger, executor=executor, notifier=notifier
+        config, clob=clob, ledger=ledger, executor=executor, notifier=notifier,
+        data_client=data_client, own_address=own_address,
     )
     engine.start()
 

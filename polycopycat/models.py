@@ -96,3 +96,36 @@ class Trade:
         data["notional"] = round(self.notional, 6)
         data["time_utc"] = self.time_utc
         return data
+
+
+@dataclass(frozen=True)
+class Position:
+    """某地址在一个 outcome token 上的持仓（Data API ``GET /positions``）。"""
+
+    proxy_wallet: str
+    asset: str           # outcome token id
+    condition_id: str
+    size: float          # 持有份额
+    avg_price: float     # 平均建仓价
+    cur_price: float = 0.0
+    realized_pnl: float = 0.0
+    redeemable: bool = False  # 市场已结算，可赎回
+    title: str = ""
+    outcome: str = ""
+    event_slug: str = ""
+
+    @classmethod
+    def from_api(cls, raw: dict[str, Any]) -> "Position":
+        return cls(
+            proxy_wallet=str(raw.get("proxyWallet", "")).lower(),
+            asset=str(raw.get("asset", "")),
+            condition_id=str(raw.get("conditionId", "")),
+            size=_as_float(raw.get("size")),
+            avg_price=_as_float(raw.get("avgPrice")),
+            cur_price=_as_float(raw.get("curPrice")),
+            realized_pnl=_as_float(raw.get("realizedPnl")),
+            redeemable=bool(raw.get("redeemable", False)),
+            title=str(raw.get("title", "")),
+            outcome=str(raw.get("outcome", "")),
+            event_slug=str(raw.get("eventSlug", "")),
+        )

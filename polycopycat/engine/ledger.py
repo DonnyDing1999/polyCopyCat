@@ -215,6 +215,36 @@ class Ledger:
         )
         return realized
 
+    def sync_positions(self, positions) -> None:
+        """实盘对账：用 Data API 持仓快照整体覆盖持仓表。
+
+        实盘下单响应不含逐档成交明细（record_order 用 apply_fill=False），
+        持仓的权威来源是链上/API 快照，定期整表覆盖。
+        """
+        with self._lock:
+            self._conn.execute("BEGIN")
+            try:
+                self._conn.execute("DELETE FROM positions")
+                now = time.time()
+                self._conn.executemany(
+                    """INSERT INTO positions
+                       (token_id, condition_id, title, outcome, size, avg_cost,
+                        realized_pnl, updated_ts)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    [
+                        (
+                            p.asset, p.condition_id, p.title, p.outcome,
+                            p.size, p.avg_price, p.realized_pnl, now,
+                        )
+                        for p in positions
+                        if p.size > 0
+                    ],
+                )
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
+
     # ---- 查询 ----
 
     def position_size(self, token_id: str) -> float:
