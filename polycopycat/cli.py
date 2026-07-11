@@ -4,6 +4,7 @@
 
     polycopycat trades 0x地址 --limit 20
     polycopycat watch 0x地址A 0x地址B --interval 10 --backfill 5
+    polycopycat watch 0x地址A --stream        # 实时推送，秒内跟到新下单
 """
 
 from __future__ import annotations
@@ -12,11 +13,15 @@ import argparse
 import json
 import logging
 import sys
+import threading
 
 from . import __version__
 from .data_api import DataApiClient, DataApiError, normalize_address
 from .models import Trade
 from .watcher import TradeWatcher
+
+# 实时推送线程和轮询主线程都会打印成交，避免行间交错
+_EMIT_LOCK = threading.Lock()
 
 
 def _address(value: str) -> str:
@@ -43,10 +48,13 @@ def _format_trade(trade: Trade) -> str:
 
 
 def _emit(trade: Trade, as_json: bool) -> None:
-    if as_json:
-        print(json.dumps(trade.to_dict(), ensure_ascii=False), flush=True)
-    else:
-        print(_format_trade(trade), flush=True)
+    line = (
+        json.dumps(trade.to_dict(), ensure_ascii=False)
+        if as_json
+        else _format_trade(trade)
+    )
+    with _EMIT_LOCK:
+        print(line, flush=True)
 
 
 def cmd_trades(args: argparse.Namespace) -> int:
@@ -63,17 +71,33 @@ def cmd_trades(args: argparse.Namespace) -> int:
 
 def cmd_watch(args: argparse.Namespace) -> int:
     client = DataApiClient(base_url=args.base_url)
+    # 纯轮询模式勤快点；实时模式下轮询只是兜底对账，可以放慢
+    interval = args.interval if args.interval is not None else (60.0 if args.stream else 10.0)
     watcher = TradeWatcher(
         client,
         args.addresses,
         on_trade=lambda trade: _emit(trade, args.json),
-        poll_interval=args.interval,
+        poll_interval=interval,
         backfill=args.backfill,
     )
+    stream = None
+    if args.stream:
+        from .stream import TradeStream
+
+        stream = TradeStream(
+            watcher.addresses,
+            on_trade=watcher.ingest,       # 与轮询共用一套去重，不会重复上报
+            on_gap=watcher.request_poll,   # 断线重连后立即对账补漏
+            ws_url=args.ws_url,
+        )
+        stream.start()
     try:
         watcher.run_forever()
     except KeyboardInterrupt:
         print("已停止监控。", file=sys.stderr)
+    finally:
+        if stream is not None:
+            stream.stop()
     return 0
 
 
@@ -124,12 +148,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="要监控的地址，可以给多个",
     )
     p_watch.add_argument(
-        "--interval", type=float, default=10.0,
-        help="轮询间隔秒数（默认 10）",
+        "--interval", type=float, default=None,
+        help="轮询间隔秒数（默认：纯轮询模式 10；--stream 模式下轮询只是兜底对账，默认 60）",
     )
     p_watch.add_argument(
         "--backfill", type=int, default=0,
         help="启动时先回放每个地址最近 N 条历史成交（默认 0，只看新的）",
+    )
+    p_watch.add_argument(
+        "--stream", action="store_true",
+        help="启用实时推送（WebSocket）：新成交秒内到达，轮询自动降级为兜底对账",
+    )
+    p_watch.add_argument(
+        "--ws-url", default=None,
+        help="实时推送地址（默认官方 wss://ws-live-data.polymarket.com，"
+             "也可用环境变量 POLYCOPYCAT_WS_URL 覆盖）",
     )
     p_watch.set_defaults(func=cmd_watch)
     return parser

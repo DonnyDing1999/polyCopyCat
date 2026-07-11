@@ -1,19 +1,21 @@
 """polyCopyCat —— Polymarket 跟单系统。
 
 当前已实现：读取任意地址在 Polymarket 上的下单（成交记录），
-并支持轮询监控新成交，作为后续自动跟单的信号源。
+支持轮询监控与实时推送（WebSocket）两种通道，作为自动跟单的信号源。
 """
 
 from .data_api import DataApiClient, DataApiError, normalize_address
 from .models import Trade
+from .stream import TradeStream
 from .watcher import TradeWatcher
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "DataApiClient",
     "DataApiError",
     "Trade",
+    "TradeStream",
     "TradeWatcher",
     "normalize_address",
     "__version__",

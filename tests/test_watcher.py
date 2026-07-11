@@ -86,6 +86,32 @@ def test_multiple_addresses_merged_by_time():
     assert [t.transaction_hash for t in fresh] == ["0xb", "0xa"]
 
 
+def test_ingest_emits_once_and_dedupes_against_polling():
+    page = [make_trade("0x1", 100)]
+    client = FakeClient({A1: [[], page, page]})
+    emitted = []
+    watcher = TradeWatcher(client, [A1], on_trade=emitted.append)
+    watcher.poll_once()  # 基线（空页）
+
+    live = make_trade("0x1", 100)
+    assert watcher.ingest(live) is True    # 实时通道先到，触发回调
+    assert watcher.ingest(live) is False   # 重复推送不再触发
+    assert watcher.poll_once() == []       # 轮询看到同一笔也不再上报
+    assert [t.transaction_hash for t in emitted] == ["0x1"]
+
+
+def test_ingest_ignores_unwatched_wallet():
+    watcher = TradeWatcher(FakeClient({A1: [[]]}), [A1])
+    assert watcher.ingest(make_trade("0x9", 100, wallet=A2)) is False
+
+
+def test_request_poll_sets_wake_event():
+    watcher = TradeWatcher(FakeClient({A1: [[]]}), [A1])
+    assert not watcher._wake.is_set()
+    watcher.request_poll()
+    assert watcher._wake.is_set()
+
+
 def test_api_error_skips_address_but_not_others():
     client = FakeClient(
         {

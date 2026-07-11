@@ -30,6 +30,13 @@ polycopycat watch 0x<40位hex> --interval 0.5 --backfill 1 --base-url http://127
   SIGINT 干净退出（stderr 打「已停止监控。」，退出码 0）
 - mock 先回 2 次 503 再成功 → 客户端自动重试；一直 503 → 退出码 1
 - 非法地址 / 打错 flag → argparse 报错，退出码 2
+- `watch --stream`：`pip install websockets` 起本地 mock WS
+  （收 subscribe、回应 "ping"、往客户端推
+  `{"topic":"activity","type":"trades","payload":{…裸trade…}}`），
+  CLI 加 `--ws-url ws://127.0.0.1:<port>`。验证点：推送→输出的时延
+  （应为毫秒级）、`transport.abort()` 掐线后 ~1s 重连并触发对账轮询
+  补漏（配大 `--interval` 才能证明是对账而不是常规轮询捞到的）、
+  同一笔成交跨通道只输出一次
 
 ## 坑
 

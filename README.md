@@ -28,13 +28,27 @@ polycopycat trades 0x目标地址 --limit 20
 持续监控一个或多个地址的新成交：
 
 ```bash
-polycopycat watch 0x地址A 0x地址B --interval 10
+polycopycat watch 0x地址A 0x地址B --interval 10   # 轮询模式
+polycopycat watch 0x地址A --stream                # 实时推送模式（推荐，秒内跟到）
 ```
 
 - 地址用 Polymarket 个人主页 URL 里的那个 0x 地址（proxy wallet）
 - 首次轮询只建立基线，不会把历史刷成"新成交"；加 `--backfill 5` 可先回放最近 5 条
 - 加 `--json` 输出 JSON lines，方便接下游程序；`--include-maker` 连挂单侧成交一起看
-- 走代理或本地测试时用 `--base-url`（或环境变量 `POLYCOPYCAT_DATA_API_URL`）指到别的入口
+- 走代理或本地测试时用 `--base-url` / `--ws-url`（或环境变量
+  `POLYCOPYCAT_DATA_API_URL` / `POLYCOPYCAT_WS_URL`）指到别的入口
+
+## 时延：轮询 vs 实时推送
+
+跟单对时延敏感，两种通道的差别：
+
+| 模式 | 新成交被发现的时延 | 原理 |
+| --- | --- | --- |
+| 轮询（默认） | 平均约「轮询间隔的一半 + Data API 索引延迟」，`--interval 10` 时大约 5~12 秒 | 定期拉 `GET /trades` 增量比对 |
+| `--stream` 实时 | 通常 1 秒内 | 订阅 Polymarket 实时数据流（官网活动流同款 WebSocket），成交即推 |
+
+- 轮询想更快可以把 `--interval` 压到 2 秒左右，代价是请求量变大（每地址每轮 1 个请求），太激进可能触发限流
+- `--stream` 模式下轮询自动降级为兜底对账（默认 60 秒一轮）：WebSocket 断线重连后会立刻触发一次对账轮询，把断线期间漏掉的成交补回来，且与实时通道共用一套去重、不会重复上报
 
 在代码里使用（跟单逻辑之后就挂在 `on_trade` 回调上）：
 
@@ -59,7 +73,7 @@ pytest
 ## 状态 / Roadmap
 
 - [x] 读取目标地址的成交记录 + 轮询监控（`polycopycat trades` / `polycopycat watch`）
-- [ ] 实时性升级：CLOB WebSocket 订阅
+- [x] 实时性升级：实时成交推送（WebSocket）+ 轮询兜底对账（`watch --stream`）
 - [ ] 跟单下单：按固定金额或比例复制，接 CLOB 下单
 - [ ] 风控：单笔上限、总敞口上限、滑点保护、市场黑名单
 - [ ] 下单与成交结果通知

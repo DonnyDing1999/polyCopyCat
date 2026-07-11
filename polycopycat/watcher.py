@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections import deque
 from typing import Callable, Iterable
@@ -51,6 +52,9 @@ class TradeWatcher:
         self._seen: dict[str, set[tuple]] = {a: set() for a in self._addresses}
         self._seen_order: dict[str, deque[tuple]] = {a: deque() for a in self._addresses}
         self._baselined: set[str] = set()
+        # 实时推送线程（TradeStream）会并发调 ingest()，去重集合需要加锁
+        self._lock = threading.Lock()
+        self._wake = threading.Event()
 
     @property
     def addresses(self) -> list[str]:
@@ -84,22 +88,54 @@ class TradeWatcher:
             started = time.monotonic()
             self.poll_once()
             elapsed = time.monotonic() - started
-            time.sleep(max(0.0, self.poll_interval - elapsed))
+            # 用事件等待代替 sleep，request_poll() 可随时打断提前进入下一轮
+            self._wake.wait(max(0.0, self.poll_interval - elapsed))
+            self._wake.clear()
+
+    def request_poll(self) -> None:
+        """让 run_forever 跳过剩余等待、立即开始下一轮轮询（线程安全）。
+
+        实时推送断线重连后用它触发对账，补上断线期间可能漏掉的成交。
+        """
+        self._wake.set()
+
+    def ingest(self, trade: Trade) -> bool:
+        """从旁路（如实时推送）灌入一笔成交，返回它是否是没见过的新成交。
+
+        新成交会同步触发 ``on_trade`` 回调并计入去重集合，之后轮询再看到
+        同一笔不会重复上报；不在监控名单里的地址直接忽略。可跨线程调用。
+        """
+        address = trade.proxy_wallet
+        if address not in self._seen:
+            return False
+        with self._lock:
+            seen = self._seen[address]
+            if trade.key in seen:
+                return False
+            seen.add(trade.key)
+            order = self._seen_order[address]
+            order.append(trade.key)
+            while len(order) > _SEEN_CAP:
+                seen.discard(order.popleft())
+        if self._on_trade:
+            self._on_trade(trade)
+        return True
 
     def _diff(self, address: str, trades: list[Trade]) -> list[Trade]:
         """把一页成交（新→旧）与已见集合比对，返回本轮要上报的部分。"""
         first_poll = address not in self._baselined
-        seen = self._seen[address]
-        order = self._seen_order[address]
-        fresh: list[Trade] = []
-        for trade in trades:
-            if trade.key in seen:
-                continue
-            seen.add(trade.key)
-            order.append(trade.key)
-            fresh.append(trade)
-        while len(order) > _SEEN_CAP:
-            seen.discard(order.popleft())
+        with self._lock:
+            seen = self._seen[address]
+            order = self._seen_order[address]
+            fresh: list[Trade] = []
+            for trade in trades:
+                if trade.key in seen:
+                    continue
+                seen.add(trade.key)
+                order.append(trade.key)
+                fresh.append(trade)
+            while len(order) > _SEEN_CAP:
+                seen.discard(order.popleft())
 
         if first_poll:
             self._baselined.add(address)
