@@ -1,158 +1,288 @@
 # polyCopyCat
 
-一个 Polymarket 跟单系统：盯住你选定的交易员地址，他们在 Polymarket 上开仓、平仓时，按你设定的规则自动跟单。
+一个 Polymarket 跟单系统：盯住你选定的交易员地址，他们开仓、平仓时，按你设定的规则自动跟单。
+
+完整工作流：**`scout` 找人 → `run`（纸面）验证 → `report` 复盘 → 确认后再上实盘**。
 
 ## 想法
 
-Polymarket 的成交都在链上（Polygon），任何地址的持仓和历史成交都是公开的。找到几个长期赚钱的地址，跟着他们下单，就是这个项目要做的事：
+Polymarket 的成交都在链上（Polygon），任何地址的持仓和历史成交都是公开的。找到几个长期赚钱的地址，跟着他们下单，就是这个项目做的事：
 
-- 监控目标地址的成交（Polymarket Data API / CLOB WebSocket）
-- 发现新开仓或平仓后，按固定金额或按比例复制下单
-- 风控：单笔金额上限、总敞口上限、滑点保护、市场黑名单
-- 下单和成交结果的通知
+- 发现值得跟的地址（战绩回放 + 做市/套利地址识别）
+- 监控目标地址成交（轮询 + WebSocket 实时推送双通道）
+- 按固定金额或比例复制买入，按持仓比例跟随卖出
+- 风控：单笔/单市场/总敞口上限、当日亏损熔断、滑点保护、黑名单、一键停机
+- 纸面模式先验证（真实盘口模拟成交），实盘走官方 CLOB 客户端
 
-## 快速开始
+## 安装
 
-第一块已经就位：**读取其他地址的下单（成交记录）**，数据来自 Polymarket 公开的 Data API，无需 API key。
+需要 Python ≥ 3.10。
 
 ```bash
-pip install -e .
+pip install -e .            # 基础：监控 + scout + 纸面跟单
+pip install -e ".[dev]"     # 开发：加 pytest
+pip install "polycopycat[live]"  # 实盘：加 py-clob-client
 ```
 
-一次性读取某地址最近的成交（新→旧）：
+## 三步上手
 
 ```bash
-polycopycat trades 0x目标地址 --limit 20
+# 1. 找人：评估活跃地址，生成配置片段
+polycopycat scout --targets-snippet
+
+# 2. 纸面跟单：把片段并入配置，跑起来观察一两周
+cp config.example.json copycat.json   # 填 targets、调限额
+polycopycat run --config copycat.json
+
+# 3. 复盘：随时看持仓 / 盈亏 / 每一笔决策
+polycopycat report --config copycat.json
 ```
 
-持续监控一个或多个地址的新成交：
+## 命令速查
+
+| 命令 | 作用 |
+| --- | --- |
+| `trades <地址>` | 一次性读取某地址最近成交（新→旧） |
+| `watch <地址...>` | 持续监控多个地址的新成交（轮询或 `--stream` 实时） |
+| `scout [地址...]` | 寻找值得跟单的地址：回放战绩、排除做市/亏损地址 |
+| `run --config <文件>` | 启动跟单引擎（纸面/实盘由配置决定） |
+| `report` | 查看账本：信号统计、持仓、盈亏、最近订单 |
+
+所有子命令都支持 `--json`（JSON lines 输出接下游）和 `--base-url`（替换 Data API 入口）；顶层 `-v` 开调试日志，`--version` 看版本。地址一律用 Polymarket 个人主页 URL 里的 0x 地址（proxy wallet）。
+
+### trades / watch —— 读取与监控
 
 ```bash
+polycopycat trades 0x目标地址 --limit 20          # --include-maker 连挂单侧一起看
 polycopycat watch 0x地址A 0x地址B --interval 10   # 轮询模式
-polycopycat watch 0x地址A --stream                # 实时推送模式（推荐，秒内跟到）
+polycopycat watch 0x地址A --stream --backfill 5   # 实时推送 + 启动回放最近 5 条
 ```
 
-- 地址用 Polymarket 个人主页 URL 里的那个 0x 地址（proxy wallet）
-- 首次轮询只建立基线，不会把历史刷成"新成交"；加 `--backfill 5` 可先回放最近 5 条
-- 加 `--json` 输出 JSON lines，方便接下游程序；`--include-maker` 连挂单侧成交一起看
-- 走代理或本地测试时用 `--base-url` / `--ws-url`（或环境变量
-  `POLYCOPYCAT_DATA_API_URL` / `POLYCOPYCAT_WS_URL`）指到别的入口
+- 首次轮询只建立基线，不会把历史刷成"新成交"
+- `--stream` 下轮询自动降级为兜底对账（默认 60s）；断线重连后立刻补一轮，与实时通道共用一套去重，不会重复上报
+
+### scout —— 找跟单对象
+
+```bash
+polycopycat scout                          # 默认从全站最近成交挖活跃地址
+polycopycat scout --from-leaderboard       # 叠加官方排行榜作为候选来源
+polycopycat scout 0x地址A 0x地址B          # 直接评估指定地址
+polycopycat scout --targets-snippet --top 5
+```
+
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `--candidates` | 40 | 最多评估多少个候选 |
+| `--pages` | 1 | 每个地址回放几页成交带（每页 500 笔） |
+| `--min-trades` / `--min-notional` | 20 / 2000 | 样本与成交额下限 |
+| `--window` | 30d | 排行榜统计窗口（1d/7d/30d/all） |
+| `--top` | 5 | `--targets-snippet` 输出前几名 |
+
+评估方法：用与账本一致的均价法**回放**每个候选的公开成交带，得出已实现盈亏、胜率、持仓时长、市场广度，然后**先排除后打分**：
+
+- **排除**（宁严勿松）：样本不足、成交额太小、多日不活跃、回放亏损、胜率过低，以及最关键的——**快进快出占比过高（疑似做市/套利）**。这类地址账面常年"盈利"、胜率漂亮，但赚的是价差返佣，方向毫无参考价值，跟单基本必亏
+- **打分**（只在合格者间排序）：盈利 40 + 胜率 25 + 市场广度 15 + 活跃度 10 + 单笔规模 10，公式刻意简单透明
+- 窗口外建的仓（只见卖不见买）盈亏未知，不掺进胜率——只对能自证的部分下结论
+
+### run / report —— 跟单引擎
+
+```bash
+polycopycat run --config copycat.json            # mode 由配置决定，默认 paper
+polycopycat run --config copycat.json --paper    # 保险丝：强制纸面
+polycopycat report --config copycat.json         # 或 report --ledger data/copycat.sqlite3
+```
+
+引擎管道（每个环节的结论都落账本，可追溯）：
+
+```
+信号（watch/stream 双通道去重）→ 过滤 → 仓位计算 → 风控闸门 → 执行器 → sqlite 账本 → 通知
+                                                                └ 对账线程：目标持仓镜像 / 实盘持仓同步 / 可赎回提醒
+```
+
+## 配置参考（copycat.json）
+
+完整示例见 [config.example.json](config.example.json)。所有金额单位 USDC，价格量纲 0~1。
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `mode` | `paper` | `paper` 纸面模拟 / `live` 实盘 |
+| `ledger_path` | `data/copycat.sqlite3` | 账本位置（`data/` 已在 .gitignore） |
+| `reconcile_interval_s` | 300 | 对账周期：刷新目标镜像、实盘同步持仓 |
+| `data_api_url` / `ws_url` / `clob_url` | 官方入口 | 走代理或本地测试时覆盖 |
+| **targets[]** |  | 跟单目标，至少一个 |
+| `.address` | 必填 | 目标 proxy wallet 地址 |
+| `.ratio` / `.max_per_trade_usdc` | 继承 sizing | 按目标覆盖比例/单笔上限 |
+| `.paused` | false | 暂停跟单（仍监控、仍维护镜像） |
+| **sizing** |  | 买入金额怎么算 |
+| `.mode` | `proportional` | `proportional`：目标金额×ratio；`fixed`：固定 fixed_usdc |
+| `.ratio` / `.fixed_usdc` / `.max_per_trade_usdc` | 0.1 / 20 / 100 | 比例、固定额、单笔上限 |
+| **filters** |  | 信号级过滤 |
+| `.min_target_notional_usdc` | 10 | 尘埃单阈值：目标成交金额低于此不跟 |
+| `.max_signal_age_s` | 30 | 信号超龄不跟（价格早走了） |
+| `.follow_sells` | true | 是否跟随卖出 |
+| **risk** |  | 上限设为 null 表示不启用该项 |
+| `.max_market_exposure_usdc` | 200 | 单市场持仓成本上限 |
+| `.max_total_exposure_usdc` | 1000 | 总持仓成本上限 |
+| `.daily_max_loss_usdc` | 100 | 当日已实现亏损熔断（只拦开新仓，减仓放行） |
+| `.market_blacklist` | [] | condition id 或 slug |
+| `.kill_switch_file` | `STOP` | 该文件存在时全面停止开新仓 |
+| **execution** |  |  |
+| `.slippage_cap` | 0.02 | 限价 = 目标成交价 ± 此值，FAK 绝不追价 |
+| **watch** |  | 信号源 |
+| `.stream` | true | 实时推送 + 轮询兜底 |
+| `.poll_interval` | null | null = 自动（stream 模式 60s，纯轮询 10s） |
+| `.backfill` | 0 | 启动时回放最近 N 条 |
+| **notify** |  | 不配 Telegram 就只打日志 |
+| `.telegram_bot_token_env` | "" | 存 bot token 的**环境变量名**（不是 token 本身） |
+| `.telegram_chat_id` | "" | 接收通知的 chat |
+| **live** |  | 实盘参数，paper 模式忽略 |
+| `.private_key_env` | `POLYCOPYCAT_PRIVATE_KEY` | 私钥所在环境变量名 |
+| `.funder` | "" | 资金地址（proxy wallet）；EOA 直连留空 |
+| `.signature_type` | 2 | 0=EOA，1=邮箱钱包代理，2=浏览器钱包代理 |
+| `.i_understand_live_trading_risk` | false | 必须显式改 true 才允许实盘启动 |
+
+## 环境变量
+
+| 变量 | 用途 |
+| --- | --- |
+| `POLYCOPYCAT_DATA_API_URL` | 覆盖 Data API 入口 |
+| `POLYCOPYCAT_WS_URL` | 覆盖实时推送入口 |
+| `POLYCOPYCAT_CLOB_URL` | 覆盖 CLOB 入口 |
+| `POLYCOPYCAT_LB_URL` | 覆盖排行榜入口 |
+| `POLYCOPYCAT_PRIVATE_KEY` | 实盘私钥（变量名可在 `live.private_key_env` 改；绝不落盘、绝不进日志） |
+| 自定义名 | Telegram bot token，变量名由 `notify.telegram_bot_token_env` 指定 |
+
+## 数据来源
+
+| 接口 | 默认入口 | 用在哪 | 状态 |
+| --- | --- | --- | --- |
+| Data API | `data-api.polymarket.com` | 成交带、持仓（trades/watch/scout/镜像/对账） | 公开，无需鉴权 |
+| 实时数据流 | `wss://ws-live-data.polymarket.com` | 实时成交推送（官网活动流同款） | 公开；协议按公开资料实现 |
+| CLOB | `clob.polymarket.com` | 市场元数据、订单簿（只读）；实盘下单（L1/L2 鉴权） | 官方 |
+| 排行榜 | `lb-api.polymarket.com` | scout 候选来源 | **非正式文档**，不可用时自动跳过 |
 
 ## 时延：轮询 vs 实时推送
 
-跟单对时延敏感，两种通道的差别：
-
 | 模式 | 新成交被发现的时延 | 原理 |
 | --- | --- | --- |
-| 轮询（默认） | 平均约「轮询间隔的一半 + Data API 索引延迟」，`--interval 10` 时大约 5~12 秒 | 定期拉 `GET /trades` 增量比对 |
-| `--stream` 实时 | 通常 1 秒内 | 订阅 Polymarket 实时数据流（官网活动流同款 WebSocket），成交即推 |
+| 轮询 | 平均约「轮询间隔的一半 + Data API 索引延迟」，`--interval 10` 时约 5~12 秒 | 定期拉 `GET /trades` 增量比对 |
+| `--stream` | 通常 1 秒内 | 订阅实时数据流，成交即推；轮询降级为兜底对账 |
 
-- 轮询想更快可以把 `--interval` 压到 2 秒左右，代价是请求量变大（每地址每轮 1 个请求），太激进可能触发限流
-- `--stream` 模式下轮询自动降级为兜底对账（默认 60 秒一轮）：WebSocket 断线重连后会立刻触发一次对账轮询，把断线期间漏掉的成交补回来，且与实时通道共用一套去重、不会重复上报
+轮询想更快可以把 `--interval` 压到 2 秒左右，代价是请求量（每地址每轮 1 个请求），太激进可能触发限流。
 
-## 找跟单对象：scout
+## 跟单规则与已知边界
 
-跟谁比怎么跟更重要。`scout` 从公开数据里筛选值得跟的地址：
+**买入**：跟随金额 = min(目标金额 × ratio, 单笔上限)（或固定金额模式）；限价 = 目标成交价 + slippage_cap，按市场 tick 取整、校验最小下单量，FAK 只吃限价内的盘口。
 
-```bash
-polycopycat scout                          # 默认从全站最近成交挖活跃地址评估
-polycopycat scout --from-leaderboard       # 叠加官方排行榜作为候选来源
-polycopycat scout 0x地址A 0x地址B          # 直接评估指定地址
-polycopycat scout --targets-snippet        # 顺手生成 copycat.json 的 targets 段
-```
+**卖出**：目标卖掉他持仓的 x%，就卖掉自己持仓的 x%。目标持仓镜像 = 启动/定期 `/positions` 快照 + 每笔成交实时累加（无论该笔跟没跟都更新），merge/redeem 等不出现在成交流里的变化由对账兜住；镜像没记录时按全平保守离场；余量将低于最小下单量时直接全平，避免死仓。
 
-评估方法：拉每个候选的公开成交带（≤500 笔/页，`--pages` 可加深），
-用与账本一致的均价法**回放**出已实现盈亏、胜率、持仓时长、市场广度，
-再按规则先排除后打分：
+**纸面模式**（默认）：执行器拉实时订单簿逐档模拟 FAK 成交，滑点按真实盘口算，账本记的就是「如果真跟会怎样」。注意纸面结果略偏乐观（没有排队竞争、你的单不推动价格）：纸面亏的实盘一定亏，纸面小赚的未必赚。
 
-- **排除**（宁严勿松）：样本不足、成交额太小、多日不活跃、回放亏损、
-  胜率过低，以及最关键的——**快进快出占比过高（疑似做市/套利）**。
-  这类地址账面常年"盈利"、胜率漂亮，但赚的是价差返佣，方向毫无
-  参考价值，跟单基本必亏
-- **打分**（只在合格者间排序）：盈利 40 + 胜率 25 + 市场广度 15 +
-  活跃度 10 + 单笔规模 10，公式刻意简单透明
-- 窗口外建的仓（只见卖不见买）盈亏未知，不掺进胜率——只对能自证的
-  部分下结论
+**实盘边界**：
 
-注意：排行榜接口非正式文档（不可用时自动跳过，可用 `--leaderboard-url` /
-`POLYCOPYCAT_LB_URL` 覆盖）；回放窗口有限，历史盈利不代表未来，
-选出来的地址先用纸面模式跑一段再说。
-
-## 跟单引擎
-
-监控只是信号源，`polycopycat run` 才是跟单本体：
-
-```
-信号（watch/stream）→ 过滤 → 仓位计算 → 风控闸门 → 执行器 → sqlite 账本 → 通知
-```
-
-```bash
-cp config.example.json copycat.json   # 改成你的目标地址和限额
-polycopycat run --config copycat.json # 默认 paper 纸面模式
-polycopycat report --config copycat.json  # 随时看持仓 / 盈亏 / 最近订单
-```
-
-### 先跑纸面（强烈建议）
-
-`mode: "paper"` 不动真钱：执行器拉实时订单簿模拟 FAK 成交，滑点按真实盘口计算，
-账本里记的就是「如果真跟会怎样」。跑一两周 `report` 一看便知：跟这个地址到底
-赚不赚、滑点吃掉多少。`--paper` 参数可以强制任何配置以纸面运行（实盘前的保险丝）。
-
-### 跟单规则（配置里都能调）
-
-- **买入**：跟随金额 = min(目标金额 × ratio, 单笔上限)，或固定金额模式；
-  限价 = 目标成交价 + slippage_cap，FAK 只吃限价内的盘口，绝不追价
-- **卖出**：目标卖掉他持仓的 x%，就卖掉自己持仓的 x%（持仓镜像实时累加 +
-  定期 `/positions` 对账，merge/redeem 造成的变化也能兜住）；余量不足最小
-  下单量时全平，避免死仓
-- **过滤**：尘埃单（金额阈值）、过期信号（默认 30s）、可按目标暂停
-- **风控**：单市场敞口、总敞口、当日亏损熔断（只拦开新仓，减仓放行）、
-  市场黑名单、`STOP` 文件一键停机
-
-### 实盘
-
-```bash
-pip install "polycopycat[live]"
-export POLYCOPYCAT_PRIVATE_KEY=0x...   # 建议专用小额热钱包
-```
-
-配置里 `mode: "live"`，并把 `live.i_understand_live_trading_risk` 显式改成
-`true`（不改会拒绝启动）。浏览器钱包用户：`signature_type: 2` + `funder`
-填 Polymarket 个人主页的 proxy wallet 地址；邮箱钱包用 1；EOA 直连用 0。
-首次用 EOA 交易需要先对交易所合约做 USDC/CTF 授权（见 Polymarket 文档）。
-
-实盘已知边界（代码里也有注释）：
-
-- 下单响应不含逐档成交明细，持仓以定期对账（Data API `/positions`）为准，
-  因此当日亏损熔断在实盘是近似值——务必同时设好敞口上限
-- 市场结算后引擎会提醒「可赎回」，但不会自动发链上 redeem 交易（涉及资金
-  操作且难以离线验证，宁缺勿滥），去 Polymarket 页面点一下即可
+- 下单响应不含逐档成交明细，持仓以定期对账为准，当日亏损熔断在实盘是近似值——务必同时设好敞口上限
+- 市场结算后引擎提醒「可赎回」，但不自动发链上 redeem 交易，去 Polymarket 页面点一下
 - 短窗口内的分批建仓暂不聚合，每笔独立跟单
+- EOA 首次交易需要先对交易所合约做 USDC/CTF 授权并备少量 POL；资金是 Polygon 上的 USDC.e
 
-在代码里使用（跟单逻辑之后就挂在 `on_trade` 回调上）：
+## 账本（sqlite）
+
+三张表，`report` 读的就是它们：
+
+- **signals**：每笔目标成交一行，`trade_key` 唯一约束提供重启幂等；`status` 记录归宿：`executed` / `filtered`（没过过滤）/ `skipped`（不值得下）/ `risk_blocked`（风控拦截）/ `no_fill`（限价内无对手盘）/ `error`
+- **orders**：每次执行一行：限价、请求量、成交量、均价、滑点、该单已实现盈亏
+- **positions**：当前持仓（份额、均价、累计已实现盈亏）；纸面由成交直接记账，实盘由对账快照覆盖
+
+`report` 输出示例：
+
+```
+信号统计: executed=2, filtered=1, risk_blocked=2
+已实现盈亏: 累计 $-0.52，今日 $-0.52
+
+## 当前持仓（1 个）
+       26.22 份 @ 0.514  成本 $   13.47  已实现 $   -0.52  [Yes] Will X happen by June 30?
+
+## 最近订单（最多 20 条）
+  #2 paper SELL 21.85@≤0.480 → filled 成交 21.85@0.490 滑点 +0.010 pnl -0.52  [Yes] ...
+  #1 paper BUY 48.07@≤0.520 → filled 成交 48.07@0.514 滑点 +0.014 pnl +0.00  [Yes] ...
+```
+
+## 在代码里使用
 
 ```python
-from polycopycat import DataApiClient, TradeWatcher
+from polycopycat import DataApiClient, TradeStream, TradeWatcher
 
 client = DataApiClient()
+
+# 读成交 / 持仓
 for t in client.get_trades("0x目标地址", limit=10):
     print(t.time_utc, t.side, t.size, t.price, t.title)
+positions = client.get_positions("0x目标地址")
 
-watcher = TradeWatcher(client, ["0x目标地址"], on_trade=print, poll_interval=10)
+# 监控：轮询 + 实时推送，共用一套去重；跟单逻辑挂 on_trade
+watcher = TradeWatcher(client, ["0x目标地址"], on_trade=print, poll_interval=60)
+stream = TradeStream(["0x目标地址"], on_trade=watcher.ingest, on_gap=watcher.request_poll)
+stream.start()
 watcher.run_forever()
 ```
 
-开发与测试：
+```python
+# scout 编程接口
+from polycopycat.scout import ScoutConfig, scout_addresses
+
+verdicts = scout_addresses(client, ["0x地址A", "0x地址B"], config=ScoutConfig())
+for v in verdicts:
+    print(v.address, v.eligible, v.score, v.reasons)
+```
+
+引擎的组装方式见 `polycopycat/cli.py` 的 `cmd_run`（CopyEngine + 执行器 + 账本 + 通知的接线就是全部）。
+
+## 项目结构
+
+```
+polycopycat/
+├── cli.py            # 命令行入口：trades / watch / scout / run / report
+├── data_api.py       # Data API 客户端（成交、持仓；公开只读）
+├── models.py         # Trade / Position 数据模型（宽容解析）
+├── watcher.py        # 轮询监控：增量去重、基线、ingest/request_poll
+├── stream.py         # 实时成交推送：订阅、保活、指数退避重连、on_gap
+├── _http.py          # 带重试的 HTTP GET（429/5xx 指数退避）
+├── engine/           # 跟单引擎
+│   ├── engine.py     #   主体：信号队列 → 过滤 → 计算 → 风控 → 执行 → 记账；对账线程
+│   ├── config.py     #   copycat.json 解析与校验
+│   ├── clob.py       #   CLOB 只读：市场元数据（缓存）、订单簿
+│   ├── signals.py    #   Signal / OrderIntent / 信号过滤
+│   ├── sizing.py     #   跟单金额、限价（tick 取整、最小量）
+│   ├── risk.py       #   风控闸门：敞口、熔断、黑名单、停机开关
+│   ├── executor.py   #   纸面执行器：订单簿逐档模拟 FAK
+│   ├── live.py       #   实盘执行器：py-clob-client 下 FAK 限价单
+│   ├── mirror.py     #   目标持仓镜像
+│   ├── ledger.py     #   sqlite 账本：信号/订单/持仓/盈亏
+│   └── notify.py     #   日志 / Telegram 通知
+├── scout/            # 找可跟单地址
+│   ├── metrics.py    #   成交带回放 → 战绩指标
+│   ├── score.py      #   排除规则 + 打分
+│   └── runner.py     #   候选来源（全站流/排行榜）与评估编排
+tests/                # 124 个单测，全部离线（HTTP/WS 均为注入的假实现）
+config.example.json   # 引擎配置示例
+.claude/skills/verify # 端到端验证手册：本地 mock 全套接口驱动真实 CLI
+```
+
+## 开发与测试
 
 ```bash
 pip install -e ".[dev]"
-pytest
+pytest                # 124 个单测，无网络依赖，<1s
 ```
+
+端到端验证不打真实 API：用本地 mock（Data API + CLOB + WebSocket 都是标准库/websockets 起的假服务）驱动真实 CLI 子进程，逐场景断言输出与账本。具体流程和各命令的验证点写在 `.claude/skills/verify/SKILL.md`。实盘下单路径无法离线验证，上线前先小额实测。
+
+版本号在 `pyproject.toml` 与 `polycopycat/__init__.py`（当前 0.6.0），每交付一个里程碑 minor +1。
 
 ## 状态 / Roadmap
 
-- [x] 读取目标地址的成交记录 + 轮询监控（`polycopycat trades` / `polycopycat watch`）
-- [x] 实时性升级：实时成交推送（WebSocket）+ 轮询兜底对账（`watch --stream`）
+- [x] 读取目标地址的成交记录 + 轮询监控（`trades` / `watch`）
+- [x] 实时成交推送（WebSocket）+ 轮询兜底对账（`watch --stream`）
 - [x] 跟单引擎 M0：纸面模拟（真实盘口算滑点）、sqlite 账本、`run` / `report`
 - [x] 跟单引擎 M1：实盘 FAK 下单（py-clob-client）、Telegram 通知
 - [x] 跟单引擎 M2：卖出跟随（持仓镜像）、定期对账、可赎回提醒
