@@ -72,6 +72,7 @@ def plan_buy(
             size=size,
             ref_price=trade.price,
             neg_risk=market.neg_risk,
+            tick_size=market.tick_size,
             title=trade.title,
             outcome=trade.outcome,
         ),

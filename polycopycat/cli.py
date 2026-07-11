@@ -127,7 +127,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     if config.mode == "live":
         from .engine.live import LiveExecutor
 
-        executor = LiveExecutor(config)
+        try:
+            executor = LiveExecutor(config, host=args.clob_url or config.clob_url)
+        except RuntimeError as exc:
+            print(f"无法启动实盘模式：{exc}", file=sys.stderr)
+            ledger.close()
+            return 1
         print(
             "⚠️  实盘模式：会用真实资金在 Polymarket 下单，风控上限见配置。",
             file=sys.stderr,

@@ -34,6 +34,7 @@ class OrderIntent:
     size: float         # 份额
     ref_price: float    # 目标的成交价，滑点基准
     neg_risk: bool
+    tick_size: float = 0.01
     title: str = ""
     outcome: str = ""
     note: str = ""      # 附注，如「跟随卖出 50%」

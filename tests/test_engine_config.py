@@ -51,13 +51,11 @@ def test_rejects_bad_mode_and_bad_numbers():
         EngineConfig.from_dict(minimal(sizing={"ratio": -1}))
 
 
-def test_live_requires_explicit_risk_ack():
-    with pytest.raises(ConfigError, match="i_understand_live_trading_risk"):
-        EngineConfig.from_dict(minimal(mode="live"))
-    config = EngineConfig.from_dict(
-        minimal(mode="live", live={"i_understand_live_trading_risk": True})
-    )
+def test_live_config_loads_without_ack():
+    # 风险确认在启动实盘执行器时校验（这样 --paper 保险丝仍可用），配置阶段只解析
+    config = EngineConfig.from_dict(minimal(mode="live"))
     assert config.mode == "live"
+    assert config.live.i_understand_live_trading_risk is False
 
 
 def test_missing_file_message(tmp_path):

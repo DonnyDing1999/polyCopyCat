@@ -204,11 +204,6 @@ class EngineConfig:
         self.reconcile_interval_s = _positive(
             "reconcile_interval_s", self.reconcile_interval_s, allow_none=False
         )
-        if self.mode == "live" and not self.live.i_understand_live_trading_risk:
-            raise ConfigError(
-                "实盘模式有真实资金风险：确认理解后把 live.i_understand_live_trading_risk "
-                "改成 true 再启动"
-            )
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "EngineConfig":
