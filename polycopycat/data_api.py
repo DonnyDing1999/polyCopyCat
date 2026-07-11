@@ -107,6 +107,24 @@ class DataApiClient:
             raise DataApiError(f"预期 /trades 返回列表，实际是: {data!r:.200}")
         return [Trade.from_api(item) for item in data if isinstance(item, dict)]
 
+    def get_recent_trades(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        taker_only: bool = True,
+    ) -> list[Trade]:
+        """全站最近成交（不指定 user），用于发现活跃地址。"""
+        params: dict[str, Any] = {
+            "limit": max(1, min(int(limit), MAX_PAGE_LIMIT)),
+            "offset": max(0, int(offset)),
+            "takerOnly": "true" if taker_only else "false",
+        }
+        data = self._get("/trades", params)
+        if not isinstance(data, list):
+            raise DataApiError(f"预期 /trades 返回列表，实际是: {data!r:.200}")
+        return [Trade.from_api(item) for item in data if isinstance(item, dict)]
+
     def get_positions(
         self,
         user: str,

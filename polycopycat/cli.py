@@ -16,6 +16,7 @@ import json
 import logging
 import sys
 import threading
+import time
 
 from . import __version__
 from .data_api import DataApiClient, DataApiError, normalize_address
@@ -100,6 +101,87 @@ def cmd_watch(args: argparse.Namespace) -> int:
     finally:
         if stream is not None:
             stream.stop()
+    return 0
+
+
+def cmd_scout(args: argparse.Namespace) -> int:
+    from .scout import (
+        ScoutConfig,
+        ScoutError,
+        candidates_from_leaderboard,
+        candidates_from_recent_trades,
+        scout_addresses,
+        targets_snippet,
+    )
+
+    client = DataApiClient(base_url=args.base_url)
+    candidates: list[str] = list(args.addresses)
+    if args.from_leaderboard:
+        try:
+            found = candidates_from_leaderboard(
+                args.leaderboard_url, window=args.window, limit=args.candidates
+            )
+            print(f"排行榜候选 {len(found)} 个（窗口 {args.window}）", file=sys.stderr)
+            candidates.extend(found)
+        except ScoutError as exc:
+            print(f"排行榜不可用，跳过该来源：{exc}", file=sys.stderr)
+    if args.from_firehose or not candidates:
+        if not args.from_firehose:
+            print("未指定候选来源，默认从全站最近成交里挖活跃地址", file=sys.stderr)
+        found = candidates_from_recent_trades(client, top=args.candidates)
+        print(f"全站成交流候选 {len(found)} 个", file=sys.stderr)
+        candidates.extend(found)
+
+    unique: dict[str, None] = {}
+    for address in candidates:
+        unique.setdefault(address, None)
+    candidates = list(unique)[: args.candidates]
+    if not candidates:
+        print("没有可评估的候选地址", file=sys.stderr)
+        return 1
+
+    config = ScoutConfig(
+        min_trades=args.min_trades,
+        min_notional_usdc=args.min_notional,
+    )
+    print(
+        f"开始评估 {len(candidates)} 个地址（每个拉最近 {args.pages} 页成交带 + 当前持仓）……",
+        file=sys.stderr,
+    )
+    verdicts = scout_addresses(
+        client, candidates, config=config, pages=args.pages,
+        progress=lambda a, i, n: print(f"  [{i}/{n}] {_short(a)}", file=sys.stderr),
+    )
+
+    if args.json:
+        for v in verdicts:
+            print(json.dumps(v.to_dict(), ensure_ascii=False), flush=True)
+    else:
+        for rank, v in enumerate(verdicts, 1):
+            s = v.stats
+            if v.eligible and s is not None:
+                win = f"{s.win_rate:.0%} ({s.wins}/{s.matched_sells})" if s.win_rate is not None else "未知(纯持有)"
+                idle_h = max(0.0, (time.time() - s.last_ts) / 3600) if s.last_ts else float("inf")
+                print(
+                    f"{rank:>3}. {_short(v.address)}  分 {v.score:>5.1f}  合格  "
+                    f"回放盈亏 ${s.realized_pnl:>+10,.2f}  胜率 {win}  "
+                    f"市场 {s.n_markets}  笔均 ${s.avg_trade_usdc:,.0f}  "
+                    f"持仓成本 ${v.exposure_usdc:,.0f}  最近活跃 {idle_h:.1f}h 前"
+                )
+            else:
+                print(f"{rank:>3}. {_short(v.address)}  排除  {'；'.join(v.reasons)}")
+    eligible_n = sum(1 for v in verdicts if v.eligible)
+    print(
+        f"\n合格 {eligible_n} / {len(verdicts)}。提醒：回放窗口有限（每页≤500笔），"
+        "历史盈利不代表未来，正式跟单前先用纸面模式验证。",
+        file=sys.stderr,
+    )
+    if args.targets_snippet:
+        if eligible_n:
+            print("\n# 可直接并入 copycat.json 的 targets 段（自行调整 ratio/限额）：")
+            print(targets_snippet(verdicts, top=args.top))
+        else:
+            print("没有合格地址，不生成 targets 片段", file=sys.stderr)
     return 0
 
 
@@ -294,6 +376,47 @@ def build_parser() -> argparse.ArgumentParser:
              "也可用环境变量 POLYCOPYCAT_WS_URL 覆盖）",
     )
     p_watch.set_defaults(func=cmd_watch)
+
+    p_scout = sub.add_parser(
+        "scout", parents=[common],
+        help="寻找值得跟单的地址：回放公开成交带评估战绩，排除做市/亏损地址",
+    )
+    p_scout.add_argument(
+        "addresses", nargs="*", type=_address, metavar="address",
+        help="直接指定要评估的候选地址（可与来源开关混用）",
+    )
+    p_scout.add_argument(
+        "--from-firehose", action="store_true",
+        help="从全站最近成交里挖活跃地址作为候选（不给任何来源时的默认）",
+    )
+    p_scout.add_argument(
+        "--from-leaderboard", action="store_true",
+        help="从官方排行榜取候选（接口非正式文档，不可用时自动跳过）",
+    )
+    p_scout.add_argument(
+        "--leaderboard-url", default=None,
+        help="排行榜接口地址（默认 lb-api.polymarket.com，"
+             "可用环境变量 POLYCOPYCAT_LB_URL 覆盖）",
+    )
+    p_scout.add_argument(
+        "--window", default="30d", choices=["1d", "7d", "30d", "all"],
+        help="排行榜统计窗口（默认 30d）",
+    )
+    p_scout.add_argument("--candidates", type=int, default=40,
+                         help="最多评估多少个候选（默认 40）")
+    p_scout.add_argument("--pages", type=int, default=1,
+                         help="每个地址回放几页成交带（每页 500 笔，默认 1）")
+    p_scout.add_argument("--top", type=int, default=5,
+                         help="--targets-snippet 输出前几名（默认 5）")
+    p_scout.add_argument("--min-trades", type=int, default=20,
+                         help="样本下限：窗口内最少成交笔数（默认 20）")
+    p_scout.add_argument("--min-notional", type=float, default=2000.0,
+                         help="窗口内总成交额下限 USDC（默认 2000）")
+    p_scout.add_argument(
+        "--targets-snippet", action="store_true",
+        help="额外输出可直接并入 copycat.json 的 targets 配置段",
+    )
+    p_scout.set_defaults(func=cmd_scout)
 
     p_run = sub.add_parser(
         "run", parents=[common],

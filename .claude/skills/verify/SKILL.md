@@ -48,6 +48,11 @@ polycopycat watch 0x<40位hex> --interval 0.5 --backfill 1 --base-url http://127
   一起删，否则 sqlite 报 disk I/O error
 - 实盘防线在 CLI 层验证：未确认风险 / 缺私钥 → 干净报错退出 1；
   `--paper` 能把 live 配置强制转纸面。真实下单路径无法离线验证
+- `scout`：mock `/trades`（带 user=单地址成交带、不带 user=全站流）、
+  `/positions`、`/leaderboard`，构造几个人设（多市场止盈鲸鱼 /
+  20 秒快进快出做市机器人 / 割肉亏损户 / 3 笔小样本）。验证点：
+  鲸鱼合格且排第一、做市者哪怕账面盈利+高胜率也要被快进快出占比
+  排除、`--targets-snippet` 只含合格地址、排行榜挂掉能优雅降级
 
 ## 坑
 
