@@ -14,11 +14,11 @@ from __future__ import annotations
 import logging
 import os
 import re
-import time
 from typing import Any
 
 import requests
 
+from ._http import HttpError, get_json
 from .models import Trade
 
 logger = logging.getLogger(__name__)
@@ -29,11 +29,10 @@ ENV_BASE_URL = "POLYCOPYCAT_DATA_API_URL"
 # /trades 单页条数上限
 MAX_PAGE_LIMIT = 500
 
-_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
-_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+_ADDRESS_RE = re.compile(r"^0[xX][0-9a-fA-F]{40}$")
 
 
-class DataApiError(RuntimeError):
+class DataApiError(HttpError):
     """Data API 请求失败（重试后仍失败或返回不可用数据）。"""
 
 
@@ -109,31 +108,16 @@ class DataApiClient:
         return [Trade.from_api(item) for item in data if isinstance(item, dict)]
 
     def _get(self, path: str, params: dict[str, Any]) -> Any:
-        url = f"{self.base_url}{path}"
-        last_error: Exception | None = None
-        for attempt in range(self.max_retries):
-            if attempt:
-                time.sleep(self.backoff * (2 ** (attempt - 1)))
-            try:
-                response = self._session.get(url, params=params, timeout=self.timeout)
-            except requests.RequestException as exc:
-                last_error = exc
-                logger.debug("请求 %s 失败（第 %d 次）: %s", url, attempt + 1, exc)
-                continue
-            if response.status_code in _RETRYABLE_STATUS:
-                last_error = DataApiError(f"HTTP {response.status_code}")
-                logger.debug(
-                    "请求 %s 返回 %d（第 %d 次），准备重试",
-                    url, response.status_code, attempt + 1,
-                )
-                continue
-            try:
-                response.raise_for_status()
-                return response.json()
-            except requests.HTTPError as exc:
-                raise DataApiError(f"Data API 返回错误: {exc}") from exc
-            except ValueError as exc:
-                raise DataApiError(f"Data API 返回了无法解析的 JSON: {exc}") from exc
-        raise DataApiError(
-            f"请求 {url} 连续 {self.max_retries} 次失败: {last_error}"
-        ) from last_error
+        try:
+            return get_json(
+                self._session,
+                f"{self.base_url}{path}",
+                params=params,
+                timeout=self.timeout,
+                max_retries=self.max_retries,
+                backoff=self.backoff,
+            )
+        except DataApiError:
+            raise
+        except HttpError as exc:
+            raise DataApiError(str(exc)) from exc

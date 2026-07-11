@@ -1,10 +1,12 @@
-"""命令行入口：读取 / 监控其他地址在 Polymarket 的下单。
+"""命令行入口：读取 / 监控其他地址在 Polymarket 的下单，以及跟单引擎。
 
 用法示例::
 
     polycopycat trades 0x地址 --limit 20
     polycopycat watch 0x地址A 0x地址B --interval 10 --backfill 5
     polycopycat watch 0x地址A --stream        # 实时推送，秒内跟到新下单
+    polycopycat run --config copycat.json     # 跟单引擎（纸面/实盘由配置决定）
+    polycopycat report --config copycat.json  # 查看持仓与盈亏
 """
 
 from __future__ import annotations
@@ -101,6 +103,125 @@ def cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_run(args: argparse.Namespace) -> int:
+    from .engine.clob import ClobReadClient
+    from .engine.config import ConfigError, load_config
+    from .engine.engine import CopyEngine
+    from .engine.executor import PaperExecutor
+    from .engine.ledger import Ledger
+    from .engine.notify import build_notifier
+    from .stream import TradeStream
+
+    try:
+        config = load_config(args.config)
+    except ConfigError as exc:
+        print(f"配置错误：{exc}", file=sys.stderr)
+        return 1
+    if args.paper:
+        config.mode = "paper"
+
+    data_client = DataApiClient(base_url=args.base_url or config.data_api_url)
+    clob = ClobReadClient(base_url=args.clob_url or config.clob_url)
+    ledger = Ledger(config.ledger_path)
+    notifier = build_notifier(config.notify)
+    if config.mode == "live":
+        from .engine.live import LiveExecutor
+
+        executor = LiveExecutor(config)
+        print(
+            "⚠️  实盘模式：会用真实资金在 Polymarket 下单，风控上限见配置。",
+            file=sys.stderr,
+        )
+    else:
+        executor = PaperExecutor(clob)
+
+    engine = CopyEngine(
+        config, clob=clob, ledger=ledger, executor=executor, notifier=notifier
+    )
+    engine.start()
+
+    addresses = [t.address for t in config.targets]
+    interval = config.watch.poll_interval
+    if interval is None:
+        interval = 60.0 if config.watch.stream else 10.0
+    watcher = TradeWatcher(
+        data_client, addresses,
+        on_trade=engine.submit,
+        poll_interval=interval,
+        backfill=config.watch.backfill,
+    )
+    stream = None
+    if config.watch.stream:
+        stream = TradeStream(
+            addresses,
+            on_trade=watcher.ingest,
+            on_gap=watcher.request_poll,
+            ws_url=args.ws_url or config.ws_url,
+        )
+        stream.start()
+    try:
+        watcher.run_forever()
+    except KeyboardInterrupt:
+        print("正在停止跟单引擎……", file=sys.stderr)
+    finally:
+        if stream is not None:
+            stream.stop()
+        engine.stop()
+        ledger.close()
+    print("已停止。", file=sys.stderr)
+    return 0
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    from .engine.config import ConfigError, load_config
+    from .engine.ledger import Ledger
+    from .engine.risk import day_start_ts
+
+    ledger_path = args.ledger
+    if ledger_path is None:
+        try:
+            ledger_path = load_config(args.config).ledger_path
+        except ConfigError as exc:
+            print(f"配置错误：{exc}", file=sys.stderr)
+            return 1
+    ledger = Ledger(ledger_path)
+    try:
+        positions = ledger.positions()
+        counts = ledger.signal_counts()
+        total_pnl = ledger.realized_pnl_total()
+        today_pnl = ledger.realized_pnl_since(day_start_ts())
+
+        print(f"# 账本 {ledger_path}")
+        print(
+            f"信号统计: " + (
+                ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "（暂无）"
+            )
+        )
+        print(f"已实现盈亏: 累计 ${total_pnl:+.2f}，今日 ${today_pnl:+.2f}")
+        print(f"\n## 当前持仓（{len(positions)} 个）")
+        if not positions:
+            print("（空仓）")
+        for p in positions:
+            print(
+                f"  {p.size:>10.2f} 份 @ {p.avg_cost:.3f}  成本 ${p.cost:>8.2f}  "
+                f"已实现 ${p.realized_pnl:+8.2f}  [{p.outcome}] {p.title}"
+            )
+        print(f"\n## 最近订单（最多 {args.limit} 条）")
+        rows = ledger.recent_orders(args.limit)
+        if not rows:
+            print("（暂无订单）")
+        for r in rows:
+            print(
+                f"  #{r['id']} {r['mode']} {r['side']} {r['req_size']:.2f}@≤{r['limit_price']:.3f}"
+                f" → {r['status']} 成交 {r['filled_size']:.2f}@{r['avg_price']:.3f}"
+                f" 滑点 {r['slippage']:+.3f} pnl {r['realized_pnl']:+.2f}"
+                f"  [{r['outcome']}] {r['title']}"
+            )
+    finally:
+        ledger.close()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
@@ -165,6 +286,38 @@ def build_parser() -> argparse.ArgumentParser:
              "也可用环境变量 POLYCOPYCAT_WS_URL 覆盖）",
     )
     p_watch.set_defaults(func=cmd_watch)
+
+    p_run = sub.add_parser(
+        "run", parents=[common],
+        help="启动跟单引擎（纸面模拟或实盘，由配置文件决定）",
+    )
+    p_run.add_argument(
+        "--config", required=True,
+        help="引擎配置文件路径（可从 config.example.json 复制修改）",
+    )
+    p_run.add_argument(
+        "--paper", action="store_true",
+        help="强制纸面模式（覆盖配置里的 mode，实盘前的保险丝）",
+    )
+    p_run.add_argument(
+        "--ws-url", default=None,
+        help="实时推送地址（默认官方，也可用环境变量 POLYCOPYCAT_WS_URL 覆盖）",
+    )
+    p_run.add_argument(
+        "--clob-url", default=None,
+        help="CLOB 地址（默认官方 clob.polymarket.com，"
+             "也可用环境变量 POLYCOPYCAT_CLOB_URL 覆盖）",
+    )
+    p_run.set_defaults(func=cmd_run)
+
+    p_report = sub.add_parser(
+        "report", parents=[common],
+        help="查看跟单账本：持仓、盈亏、最近订单",
+    )
+    p_report.add_argument("--config", default="copycat.json", help="引擎配置文件路径")
+    p_report.add_argument("--ledger", default=None, help="直接指定账本 sqlite 路径（优先于 --config）")
+    p_report.add_argument("--limit", type=int, default=20, help="最近订单条数（默认 20）")
+    p_report.set_defaults(func=cmd_report)
     return parser
 
 

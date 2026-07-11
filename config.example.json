@@ -1,0 +1,49 @@
+{
+  "mode": "paper",
+  "ledger_path": "data/copycat.sqlite3",
+  "targets": [
+    {
+      "address": "0x0000000000000000000000000000000000000001",
+      "ratio": 0.1,
+      "max_per_trade_usdc": 50,
+      "paused": false
+    }
+  ],
+  "sizing": {
+    "mode": "proportional",
+    "ratio": 0.1,
+    "fixed_usdc": 20,
+    "max_per_trade_usdc": 100
+  },
+  "filters": {
+    "min_target_notional_usdc": 50,
+    "max_signal_age_s": 30,
+    "follow_sells": true
+  },
+  "risk": {
+    "max_market_exposure_usdc": 200,
+    "max_total_exposure_usdc": 1000,
+    "daily_max_loss_usdc": 100,
+    "market_blacklist": [],
+    "kill_switch_file": "STOP"
+  },
+  "execution": {
+    "slippage_cap": 0.02
+  },
+  "watch": {
+    "stream": true,
+    "poll_interval": null,
+    "backfill": 0
+  },
+  "notify": {
+    "telegram_bot_token_env": "",
+    "telegram_chat_id": ""
+  },
+  "live": {
+    "private_key_env": "POLYCOPYCAT_PRIVATE_KEY",
+    "funder": "",
+    "signature_type": 2,
+    "i_understand_live_trading_risk": false
+  },
+  "reconcile_interval_s": 300
+}
