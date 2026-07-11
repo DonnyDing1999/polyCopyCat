@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "polycopycat"
+version = "0.1.0"
+description = "Polymarket 跟单系统：监控目标地址成交并按规则自动跟单"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+]
+
+[project.scripts]
+polycopycat = "polycopycat.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["polycopycat*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
