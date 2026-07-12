@@ -1,17 +1,17 @@
-对 13 条已确认配对算价差（Kalshi 手续费已计入）……
-  1. poly_yes+kalshi_no  边际 $0.019/对 × 19,352 ≈ $365.69  Poly 0.010 + Kalshi 0.969 (费 0.002)  Will Mark Kelly win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-MK
+未指定 --pairs，进入候选配对建议模式
+2026-07-12 08:08:00,089 INFO polycopycat.xarb: 按关键词 ['france', 'spain', 'cup', 'mbappe', 'world'] 过滤后 Polymarket 剩 51 个
+2026-07-12 08:08:03,957 INFO polycopycat.xarb: 候选池：Polymarket 51 个（Yes/No 型），Kalshi 事件 4000 个
+2026-07-12 08:08:03,957 INFO polycopycat.xarb: Poly 样例: Will Argentina win the 2026 FIFA World Cup? | Will England win the 2026 FIFA World Cup? | Will France win the 2026 FIFA World Cup?
+2026-07-12 08:08:03,957 INFO polycopycat.xarb: Kalshi事件 样例: Will Elon Musk visit Mars in his lifetime? Before 2099 | Who will be the next Secretary General of NATO? Before Jan 1, 2099 | Who will the next Pope be? Before 2070
+2026-07-12 08:08:05,639 INFO polycopycat.xarb: 事件粗配命中 84 个，拉取前 40 个事件的市场做精配
 
-—— 各配对当前最优组合（负边际 = 无套利，差多少一目了然）——
-  边际 +0.019（两腿成本 0.981，Poly 0.010 + Kalshi 0.969 + 费 0.002，深度 19,352）  Will Mark Kelly win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-MK
-  边际 +0.004（两腿成本 0.996，Poly 0.995 + Kalshi 0.001 + 费 0.000，深度 8,925）  Will Beto O’Rourke win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-BORO
-  边际 +0.003（两腿成本 0.997，Poly 0.995 + Kalshi 0.002 + 费 0.000，深度 125,300）  Will Kristi Noem win the 2028 Republican presidential nomination? ↔ KXPRESNOMR-28-KNOE
-  边际 +0.003（两腿成本 0.997，Poly 0.994 + Kalshi 0.003 + 费 0.000，深度 153,700）  Will Andrew Yang win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-AYAN
-  边际 +0.003（两腿成本 0.997，Poly 0.992 + Kalshi 0.005 + 费 0.000，深度 59,353）  Will Chris Murphy win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-CMUR
-  边际 +0.000（两腿成本 1.000，Poly 0.991 + Kalshi 0.008 + 费 0.001，深度 85,781）  Will Mark Cuban win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-MC
-  边际 -0.000（两腿成本 1.000，Poly 0.993 + Kalshi 0.007 + 费 0.000，深度 110,860）  Will Ruben Gallego win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-RGAL
-  边际 -0.001（两腿成本 1.001，Poly 0.995 + Kalshi 0.006 + 费 0.000，深度 74,693）  Will Mike Pence win the 2028 Republican presidential nomination? ↔ KXPRESNOMR-28-MPEN
-  边际 -0.002（两腿成本 1.002，Poly 0.022 + Kalshi 0.978 + 费 0.002，深度 5）  Will Ro Khanna win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-RKHA
-  边际 -0.002（两腿成本 1.002，Poly 0.993 + Kalshi 0.008 + 费 0.001，深度 87,869）  Will Bernie Sanders win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-BS
-  边际 -0.003（两腿成本 1.003，Poly 0.949 + Kalshi 0.051 + 费 0.003，深度 275）  Will Pete Buttigieg win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-PB
-  边际 -0.007（两腿成本 1.007，Poly 0.080 + Kalshi 0.922 + 费 0.005，深度 4）  Will the US confirm that aliens exist before 2027? ↔ KXALIENS-27
-  边际 -0.022（两腿成本 1.022，Poly 0.415 + Kalshi 0.590 + 费 0.017，深度 25）  Will J.D. Vance win the 2028 Republican presidential nomination? ↔ KXPRESNOMR-28-JDV
+⚠️ 候选只是文本相似：两边结算条款（数据源/截止时间/措辞）必须人工核对等价后，才能写进配对文件用于价差扫描——配错对不是套利，是双边敞口。
+没有相似度 ≥ 0.35 的候选配对
+
+—— 未达标的最接近候选（仅供校准阈值参考）——
+  1. [未达标] 结构化匹配 0.30（截止差未知）
+     Poly:   Will Europe (UEFA) win the 2026 FIFA World Cup?  [0x3561a95d16ac2edfd3831aba4612c88c6f5b84a6f0924bdb6b07dc7cfe73e121]
+     Kalshi: Who will host the 2038 FIFA World Cup? 2038 Will USA be announced as a host for the 2038 Men's FIFA World Cup? USA  [KXWCHOST-2038-USA]
+  2. [未达标] 结构化匹配 0.30（截止差未知）
+     Poly:   Will South America (CONMEBOL) win the 2026 FIFA World Cup?  [0x0ed2e5e985631ab71750ad21a40503508a5f7d928032b2d1f8c901013f4e002f]
+     Kalshi: Who will host the 2038 FIFA World Cup? 2038 Will USA be announced as a host for the 2038 Men's FIFA World Cup? USA  [KXWCHOST-2038-USA]
