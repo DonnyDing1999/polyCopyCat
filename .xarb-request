@@ -1,1 +1,1 @@
---pairs xarb-pairs.json --min-edge 0.005 --min-profit 0.05
+--suggest --query france spain cup mbappe world --top 30 --min-score 0.35 --max-kalshi 4000

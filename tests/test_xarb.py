@@ -303,6 +303,43 @@ def test_suggest_pairs_rejects_far_close_times():
     assert scanner.suggest_pairs(min_score=0.5, max_gap_days=3.0) == []
 
 
+def test_suggest_pairs_query_filters_poly_pool():
+    poly_markets = [
+        poly_market(cid="0xc1", question="Will Bitcoin be above 65000 on July 14?"),
+        poly_market(cid="0xc2", question="Will France win the World Cup?"),
+    ]
+    kalshi = FakeKalshi(
+        events=[kalshi_event("EV-BTC", "Bitcoin above 65000 on July 14?"),
+                kalshi_event("EV-WC", "Will France win the World Cup?")],
+        event_markets={
+            "EV-BTC": [kalshi_market(ticker="KX-BTC", event_ticker="EV-BTC")],
+            "EV-WC": [kalshi_market(ticker="KX-WC", event_ticker="EV-WC",
+                                    title="Will France win the World Cup?")],
+        },
+    )
+    scanner = make_scanner(poly_markets, {}, kalshi)
+    suggestions = scanner.suggest_pairs(min_score=0.5, query=["france", "cup"])
+    assert [s["poly_condition_id"] for s in suggestions] == ["0xc2"]
+
+
+def test_scan_pairs_accepts_prebuilt_poly_index():
+    poly_books = {"tokY": OrderBook(asks=(BookLevel(0.38, 100),)),
+                  "tokN": OrderBook(asks=(BookLevel(0.65, 100),))}
+    kalshi_book = KalshiBook.from_api({"orderbook": {"yes": [[42, 80]], "no": [[55, 60]]}})
+
+    class NoDiscovery:
+        def discover_markets(self, limit=1000):
+            raise AssertionError("缓存模式不应重拉目录")
+
+    scanner = XarbScanner(FakeClob(poly_books), FakeKalshi(books={"KX-1": kalshi_book}),
+                          poly_discovery=NoDiscovery())
+    index = {"0xc1": poly_market()}
+    opportunities = scanner.scan_pairs(
+        [PairConfig("0xc1", "KX-1")], min_edge=0.01, min_profit=1.0, poly_markets=index
+    )
+    assert len(opportunities) == 1
+
+
 def test_suggest_pairs_series_mode_bypasses_funnel():
     poly_markets = [poly_market(cid="0xc1", question="Bitcoin above 65000 on July 14?")]
     kalshi = FakeKalshi(markets=[kalshi_market(ticker="KX-BTC")])

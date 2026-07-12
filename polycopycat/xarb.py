@@ -296,6 +296,7 @@ class XarbScanner:
         top: int = 20,
         kalshi_series: str | None = None,
         event_probe: int = 40,
+        query: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """两级漏斗提名候选配对。
 
@@ -309,6 +310,13 @@ class XarbScanner:
             m for m in self._poly.discover_markets(limit=max_poly)
             if [o.lower() for o in m.get("outcomes", [])[:2]] == ["yes", "no"]
         ]
+        if query:
+            needles = [q.lower() for q in query]
+            poly_markets = [
+                m for m in poly_markets
+                if any(needle in m["question"].lower() for needle in needles)
+            ]
+            logger.info("按关键词 %s 过滤后 Polymarket 剩 %d 个", query, len(poly_markets))
         poly_prepped = [
             (pm, _tokens(pm["question"]), extract_features(pm["question"]))
             for pm in poly_markets
@@ -439,6 +447,10 @@ class XarbScanner:
 
     # ---- 精确层：对确认配对算价差 ----
 
+    def poly_market_index(self, limit: int = 1000) -> dict[str, dict]:
+        """condition_id → 市场信息；循环监控时缓存一次，避免每轮重拉目录。"""
+        return {m["condition_id"]: m for m in self._poly.discover_markets(limit=limit)}
+
     def scan_pairs(
         self,
         pairs: list[PairConfig],
@@ -446,13 +458,12 @@ class XarbScanner:
         min_edge: float = 0.01,
         min_profit: float = 1.0,
         diagnostics_out: list | None = None,
+        poly_markets: dict[str, dict] | None = None,
     ) -> list[XarbOpportunity]:
         if not pairs:
             return []
-        poly_markets = {
-            m["condition_id"]: m
-            for m in self._poly.discover_markets(limit=1000)
-        }
+        if poly_markets is None:
+            poly_markets = self.poly_market_index()
         opportunities: list[XarbOpportunity] = []
         for pair in pairs:
             pm = poly_markets.get(pair.poly_condition_id)

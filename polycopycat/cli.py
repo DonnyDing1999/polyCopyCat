@@ -240,6 +240,41 @@ def cmd_xarb_scan(args: argparse.Namespace) -> int:
     scanner = XarbScanner(clob, kalshi, gamma_url=args.gamma_url)
     suggest_mode = args.suggest or not args.pairs
     try:
+        if args.pairs and args.loop:
+            # 比赛中本地循环监控：目录缓存一次，每轮只拉两所订单簿
+            pairs = load_pairs(args.pairs)
+            poly_cache = scanner.poly_market_index()
+            print(
+                f"循环监控 {len(pairs)} 条配对，每 {args.loop:.0f}s 一轮，"
+                "只打印达到阈值的机会（Ctrl-C 停止）……",
+                file=sys.stderr,
+            )
+            try:
+                while True:
+                    started = time.monotonic()
+                    opportunities = scanner.scan_pairs(
+                        pairs, min_edge=args.min_edge, min_profit=args.min_profit,
+                        poly_markets=poly_cache,
+                    )
+                    stamp = time.strftime("%H:%M:%S")
+                    if opportunities:
+                        for opp in opportunities:
+                            line = (
+                                json.dumps(opp.to_dict(), ensure_ascii=False)
+                                if args.json else
+                                f"[{stamp}] 🎯 {opp.combo}  边际 ${opp.edge_per_pair:.3f}/对 × "
+                                f"{opp.max_pairs:,.0f} ≈ ${opp.profit_usdc:,.2f}  "
+                                f"{opp.poly_question} ↔ {opp.kalshi_ticker}"
+                            )
+                            print(line, flush=True)
+                    else:
+                        print(f"[{stamp}] 无达标价差", file=sys.stderr, flush=True)
+                    elapsed = time.monotonic() - started
+                    time.sleep(max(0.0, args.loop - elapsed))
+            except KeyboardInterrupt:
+                print("已停止监控。", file=sys.stderr)
+            return 0
+
         if args.pairs:
             pairs = load_pairs(args.pairs)
             print(f"对 {len(pairs)} 条已确认配对算价差（Kalshi 手续费已计入）……", file=sys.stderr)
@@ -285,7 +320,7 @@ def cmd_xarb_scan(args: argparse.Namespace) -> int:
             scored = scanner.suggest_pairs(
                 max_poly=args.max_markets, max_kalshi=args.max_kalshi,
                 min_score=0.15, top=max(args.top, 10),
-                kalshi_series=args.kalshi_series,
+                kalshi_series=args.kalshi_series, query=args.query,
             )
             qualified = [s for s in scored if s["score"] >= args.min_score][: args.top]
             near_misses = [s for s in scored if s["score"] < args.min_score][:10]
@@ -593,6 +628,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="建议模式下 Kalshi 候选池大小（默认 2000）")
     p_xarb.add_argument("--kalshi-series", default=None,
                         help="只在指定 Kalshi 系列内找配对（如 KXBTCD），縮小池子提高信噪比")
+    p_xarb.add_argument("--query", nargs="+", default=None, metavar="词",
+                        help="建议模式：只配对问题里含任一关键词的 Polymarket 市场（如 --query france cup）")
+    p_xarb.add_argument("--loop", type=float, default=None, metavar="秒",
+                        help="配对模式：本地循环监控间隔秒数（比赛中用，CI 太慢；只打印达标机会）")
     p_xarb.add_argument("--min-score", type=float, default=0.5,
                         help="建议模式的标题相似度阈值 0~1（默认 0.5）")
     p_xarb.add_argument("--top", type=int, default=20, help="建议条数上限（默认 20）")
