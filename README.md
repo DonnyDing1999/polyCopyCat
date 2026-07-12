@@ -45,6 +45,7 @@ polycopycat report --config copycat.json
 | `trades <地址>` | 一次性读取某地址最近成交（新→旧） |
 | `watch <地址...>` | 持续监控多个地址的新成交（轮询或 `--stream` 实时） |
 | `scout [地址...]` | 寻找值得跟单的地址：回放战绩、排除做市/亏损地址 |
+| `arb-scan` | 扫描互补对套利机会（只读研究工具，不下单） |
 | `run --config <文件>` | 启动跟单引擎（纸面/实盘由配置决定） |
 | `report` | 查看账本：信号统计、持仓、盈亏、最近订单 |
 
@@ -84,6 +85,20 @@ polycopycat scout --targets-snippet --top 5
 - **排除**（宁严勿松）：样本不足、成交额太小、多日不活跃、回放亏损、胜率过低、频率过高（疑似机器人）、**大样本下胜率高得离谱（疑似结构性套利）**、**持仓浮亏占成本过高（疑似囤死仓/只认盈不认亏）**，以及最关键的——**快进快出占比过高（疑似做市/套利）**。这类地址账面常年"盈利"、胜率漂亮，但赚的是价差返佣，方向毫无参考价值，跟单基本必亏
 - **打分**（只在合格者间排序）：盈利 40 + 胜率 25 + 市场广度 15 + 活跃度 10 + 单笔规模 10，公式刻意简单透明
 - 窗口外建的仓（只见卖不见买）盈亏未知，不掺进胜率——只对能自证的部分下结论
+
+### arb-scan —— 套利扫描（只读）
+
+二元市场的 Yes+No 恰有一边赎回 $1，两边价格之和偏离 $1 就是套利空间——排行榜上那些"胜率 100%"的地址赚的就是这个。`arb-scan` 扫一帧快照，量化现在还剩多少这种机会：
+
+```bash
+polycopycat arb-scan --max-markets 500 --min-edge 0.005 --min-profit 0.5
+```
+
+- **买对冲**：`ask(Yes)+ask(No) < $1`，两边买入锁定利润
+- **铸造卖出**：`bid(Yes)+bid(No) > $1`，铸一对卖掉（需链上 split，仅提示）
+- 市场目录来自 Gamma API（按 24h 成交量取前 N 个活跃市场）
+
+诚实定位：这是速度游戏，肉眼可见的价差通常几百毫秒内被专业机器人吃掉；本工具只读不下单，用于研究"值不值得做执行版"，不承诺你能抢到。
 
 ### run / report —— 跟单引擎
 
@@ -150,6 +165,7 @@ polycopycat report --config copycat.json         # 或 report --ledger data/copy
 | `POLYCOPYCAT_WS_URL` | 覆盖实时推送入口 |
 | `POLYCOPYCAT_CLOB_URL` | 覆盖 CLOB 入口 |
 | `POLYCOPYCAT_LB_URL` | 覆盖排行榜入口 |
+| `POLYCOPYCAT_GAMMA_URL` | 覆盖 Gamma 市场目录入口（arb-scan 用） |
 | `POLYCOPYCAT_PRIVATE_KEY` | 实盘私钥（变量名可在 `live.private_key_env` 改；绝不落盘、绝不进日志） |
 | 自定义名 | Telegram bot token，变量名由 `notify.telegram_bot_token_env` 指定 |
 
@@ -161,6 +177,7 @@ polycopycat report --config copycat.json         # 或 report --ledger data/copy
 | 实时数据流 | `wss://ws-live-data.polymarket.com` | 实时成交推送（官网活动流同款） | 公开；协议按公开资料实现 |
 | CLOB | `clob.polymarket.com` | 市场元数据、订单簿（只读）；实盘下单（L1/L2 鉴权） | 官方 |
 | 排行榜 | `lb-api.polymarket.com` | scout 候选来源 | **非正式文档**，不可用时自动跳过 |
+| Gamma | `gamma-api.polymarket.com` | arb-scan 市场目录（活跃市场按成交量过滤） | 官方目录接口 |
 
 ## 时延：轮询 vs 实时推送
 
@@ -247,7 +264,8 @@ polycopycat/
 ├── models.py         # Trade / Position 数据模型（宽容解析）
 ├── watcher.py        # 轮询监控：增量去重、基线、ingest/request_poll
 ├── stream.py         # 实时成交推送：订阅、保活、指数退避重连、on_gap
-├── _http.py          # 带重试的 HTTP GET（429/5xx 指数退避）
+├── _http.py          # 带重试的 HTTP GET/POST（429/5xx 指数退避）
+├── arb.py            # 互补对套利扫描器（Gamma 目录 + 批量订单簿，只读）
 ├── engine/           # 跟单引擎
 │   ├── engine.py     #   主体：信号队列 → 过滤 → 计算 → 风控 → 执行 → 记账；对账线程
 │   ├── config.py     #   copycat.json 解析与校验
