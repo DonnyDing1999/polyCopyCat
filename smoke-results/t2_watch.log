@@ -1,3 +1,36 @@
-usage: polycopycat [-h] [--version] [-v]
-                   {trades,watch,scout,arb-scan,run,report} ...
-polycopycat: error: unrecognized arguments: -v
+2026-07-12 07:08:39,542 INFO polycopycat.watcher: 开始监控 3 个地址，每 60.0 秒轮询一次: 0xeebde7a0e019a63e6b476eb425505b7b3e6eba30, 0xcd47de69aa50e406b009127881df516d1ccc5ee7, 0xc97ec8059025a28f61666d5202292c858b2809ab
+2026-07-12 07:08:39,543 DEBUG urllib3.connectionpool: Starting new HTTPS connection (1): data-api.polymarket.com:443
+2026-07-12 07:08:39,753 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xeebde7a0e019a63e6b476eb425505b7b3e6eba30&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
+2026-07-12 07:08:39,755 INFO polycopycat.watcher: 0xeebde7a0e019a63e6b476eb425505b7b3e6eba30 基线建立完成，已缓存最近 100 条成交
+2026-07-12 07:08:39,947 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xcd47de69aa50e406b009127881df516d1ccc5ee7&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
+2026-07-12 07:08:39,949 INFO polycopycat.watcher: 0xcd47de69aa50e406b009127881df516d1ccc5ee7 基线建立完成，已缓存最近 100 条成交
+2026-07-12 07:08:40,072 INFO websocket: Websocket connected
+2026-07-12 07:08:40,073 INFO polycopycat.stream: 实时成交流已连接: wss://ws-live-data.polymarket.com
+2026-07-12 07:08:40,250 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xc97ec8059025a28f61666d5202292c858b2809ab&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
+2026-07-12 07:08:40,253 INFO polycopycat.watcher: 0xc97ec8059025a28f61666d5202292c858b2809ab 基线建立完成，已缓存最近 100 条成交
+2026-07-12T07:03:32Z  0xcd47…5ee7  BUY      115.00 @ 0.999     $114.89  [No] Bitcoin above 64,800 on July 12, 4AM ET?  tx 0x6b92…bb1d
+2026-07-12T07:06:02Z  0xc97e…09ab  BUY        5.00 @ 0.999       $5.00  [No] Will the highest temperature in Atlanta be between 74-75°F on July 13?  tx 0x10e9…e472
+2026-07-12T07:07:14Z  0xeebd…ba30  BUY        5.00 @ 0.350       $1.75  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x3239…ba15
+2026-07-12T07:08:44Z  0xeebd…ba30  BUY        9.00 @ 0.170       $1.53  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x2f02…05c3
+2026-07-12T07:08:45Z  0xeebd…ba30  BUY       16.66 @ 0.114       $1.90  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x6bc5…f13b
+2026-07-12T07:08:52Z  0xeebd…ba30  BUY        5.68 @ 0.120       $0.68  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0xd980…e856
+2026-07-12T07:08:53Z  0xeebd…ba30  BUY       11.36 @ 0.120       $1.36  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x1be3…59af
+2026-07-12T07:08:53Z  0xeebd…ba30  BUY        3.41 @ 0.120       $0.41  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0xf489…f36f
+2026-07-12T07:08:53Z  0xeebd…ba30  BUY        1.14 @ 0.120       $0.14  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x7778…e319
+2026-07-12T07:08:53Z  0xeebd…ba30  BUY        1.14 @ 0.120       $0.14  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x9ec9…6235
+2026-07-12T07:08:53Z  0xeebd…ba30  BUY        5.68 @ 0.120       $0.68  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0xe62d…1810
+2026-07-12T07:08:53Z  0xeebd…ba30  BUY       11.36 @ 0.120       $1.36  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x5aee…050f
+2026-07-12T07:08:53Z  0xeebd…ba30  BUY        1.14 @ 0.120       $0.14  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x285a…fd6a
+2026-07-12T07:08:53Z  0xeebd…ba30  BUY        5.62 @ 0.120       $0.67  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0xfdcd…4bd3
+2026-07-12T07:08:53Z  0xeebd…ba30  BUY        2.27 @ 0.120       $0.27  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x8267…6938
+2026-07-12T07:08:55Z  0xeebd…ba30  BUY       29.48 @ 0.120       $3.54  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x089e…a2f6
+2026-07-12T07:09:07Z  0xeebd…ba30  BUY      344.00 @ 0.946     $325.57  [Up] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x3d2f…a21e
+2026-07-12T07:09:07Z  0xeebd…ba30  BUY       43.00 @ 0.950      $40.85  [Up] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x54b3…3c99
+2026-07-12 07:09:20,073 DEBUG websocket: Sending ping
+2026-07-12T07:09:38Z  0xc97e…09ab  BUY        5.00 @ 0.670       $3.35  [No] Will the highest temperature in Chengdu be 34°C on July 12?  tx 0x0286…6e77
+2026-07-12 07:09:39,555 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xeebde7a0e019a63e6b476eb425505b7b3e6eba30&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
+2026-07-12 07:09:39,569 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xcd47de69aa50e406b009127881df516d1ccc5ee7&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
+2026-07-12 07:09:39,582 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xc97ec8059025a28f61666d5202292c858b2809ab&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
+2026-07-12 07:09:40,073 DEBUG websocket: Sending ping
+2026-07-12 07:10:00,074 DEBUG websocket: Sending ping
+已停止监控。
