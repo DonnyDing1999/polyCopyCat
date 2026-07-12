@@ -215,7 +215,8 @@ def extract_features(text: str) -> Features:
             thresholds.add(stripped)
 
     entities = frozenset(
-        w for w in re.findall(r"\b[A-Z][a-z]{2,}\b", text) if w not in _ENTITY_SKIP
+        w for w in re.findall(r"\b[A-Z][a-z]{2,}\b", text)
+        if w not in _ENTITY_SKIP and w.lower() not in _CRYPTO_ASSETS  # 资产已单独计分
     )
     return Features(
         asset=asset, month=month, day=day, hour=hour,
@@ -444,6 +445,7 @@ class XarbScanner:
         *,
         min_edge: float = 0.01,
         min_profit: float = 1.0,
+        diagnostics_out: list | None = None,
     ) -> list[XarbOpportunity]:
         if not pairs:
             return []
@@ -472,6 +474,7 @@ class XarbScanner:
                 ("poly_yes+kalshi_no", token_yes, "no"),
                 ("kalshi_yes+poly_no", token_no, "yes"),
             ]
+            best_diag = None
             for combo, poly_token, kalshi_side in combos:
                 poly_book = books.get(poly_token)
                 if poly_book is None or not poly_book.asks:
@@ -483,6 +486,22 @@ class XarbScanner:
                 fee = round(taker_fee(kalshi_ask.price), 6)
                 cost = poly_ask.price + kalshi_ask.price + fee
                 edge = 1.0 - cost
+                if diagnostics_out is not None and (
+                    best_diag is None or edge > best_diag["edge_per_pair"]
+                ):
+                    best_diag = {
+                        "poly_condition_id": pair.poly_condition_id,
+                        "kalshi_ticker": pair.kalshi_ticker,
+                        "note": pair.note,
+                        "combo": combo,
+                        "poly_price": poly_ask.price,
+                        "kalshi_price": kalshi_ask.price,
+                        "kalshi_fee": fee,
+                        "sum_cost": round(cost, 6),
+                        "edge_per_pair": round(edge, 6),
+                        "depth": round(min(poly_ask.size, kalshi_ask.count), 2),
+                        "poly_question": pm["question"],
+                    }
                 if edge < min_edge:
                     continue
                 depth = min(poly_ask.size, kalshi_ask.count)
@@ -503,5 +522,17 @@ class XarbScanner:
                     kalshi_title="",
                     note=pair.note,
                 ))
+            if diagnostics_out is not None:
+                if best_diag is None:
+                    best_diag = {
+                        "poly_condition_id": pair.poly_condition_id,
+                        "kalshi_ticker": pair.kalshi_ticker,
+                        "note": pair.note,
+                        "combo": None,
+                        "edge_per_pair": None,
+                        "poly_question": pm["question"],
+                        "detail": "至少一边没有可成交报价（订单簿为空）",
+                    }
+                diagnostics_out.append(best_diag)
         opportunities.sort(key=lambda o: -o.profit_usdc)
         return opportunities

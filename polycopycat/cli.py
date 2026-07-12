@@ -243,12 +243,16 @@ def cmd_xarb_scan(args: argparse.Namespace) -> int:
         if args.pairs:
             pairs = load_pairs(args.pairs)
             print(f"对 {len(pairs)} 条已确认配对算价差（Kalshi 手续费已计入）……", file=sys.stderr)
+            diagnostics: list = []
             opportunities = scanner.scan_pairs(
-                pairs, min_edge=args.min_edge, min_profit=args.min_profit
+                pairs, min_edge=args.min_edge, min_profit=args.min_profit,
+                diagnostics_out=diagnostics,
             )
             if args.json:
                 for opp in opportunities:
                     print(json.dumps(opp.to_dict(), ensure_ascii=False), flush=True)
+                for diag in diagnostics:
+                    print(json.dumps({"diagnostic": True, **diag}, ensure_ascii=False), flush=True)
             else:
                 if not opportunities:
                     print("已确认配对中当前没有达到阈值的跨所价差")
@@ -259,6 +263,20 @@ def cmd_xarb_scan(args: argparse.Namespace) -> int:
                         f"Poly {opp.poly_price:.3f} + Kalshi {opp.kalshi_price:.3f} "
                         f"(费 {opp.kalshi_fee:.3f})  {opp.poly_question} ↔ {opp.kalshi_ticker}"
                     )
+                if diagnostics:
+                    print("\n—— 各配对当前最优组合（负边际 = 无套利，差多少一目了然）——")
+                    diagnostics.sort(
+                        key=lambda d: -(d["edge_per_pair"] if d["edge_per_pair"] is not None else -9)
+                    )
+                    for d in diagnostics:
+                        if d["edge_per_pair"] is None:
+                            print(f"  [无报价] {d['poly_question']} ↔ {d['kalshi_ticker']}  {d.get('detail','')}")
+                            continue
+                        print(
+                            f"  边际 {d['edge_per_pair']:+.3f}（两腿成本 {d['sum_cost']:.3f}，"
+                            f"Poly {d['poly_price']:.3f} + Kalshi {d['kalshi_price']:.3f} + 费 {d['kalshi_fee']:.3f}，"
+                            f"深度 {d['depth']:,.0f}）  {d['poly_question']} ↔ {d['kalshi_ticker']}"
+                        )
         if suggest_mode:
             if not args.pairs:
                 print("未指定 --pairs，进入候选配对建议模式", file=sys.stderr)

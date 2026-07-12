@@ -164,7 +164,22 @@ def test_scan_pairs_no_edge_when_fair():
                   "tokN": OrderBook(asks=(BookLevel(0.57, 100),))}
     kalshi_book = KalshiBook.from_api({"orderbook": {"yes": [[43, 80]], "no": [[53, 60]]}})
     scanner = make_scanner([poly_market()], poly_books, FakeKalshi(books={"KX-1": kalshi_book}))
-    assert scanner.scan_pairs([PairConfig("0xc1", "KX-1")]) == []
+    diagnostics = []
+    assert scanner.scan_pairs([PairConfig("0xc1", "KX-1")], diagnostics_out=diagnostics) == []
+    # 诊断给出每对最优组合的真实边际（负数），量化"差多远"
+    assert len(diagnostics) == 1
+    d = diagnostics[0]
+    assert d["edge_per_pair"] is not None and d["edge_per_pair"] < 0
+    assert abs(d["sum_cost"] - (1 - d["edge_per_pair"])) < 1e-9
+
+
+def test_extract_features_asset_word_not_double_counted_as_entity():
+    f = extract_features("Will Satoshi move any Bitcoin by 2027?")
+    assert f.asset == "btc"
+    assert "Bitcoin" not in f.entities  # 资产已单独计分，不再进实体加分
+    g = extract_features("Will Bitcoin dip to $50,000 by December 31, 2026?")
+    # 只剩资产一致（0.45），不再靠 Bitcoin 实体凑到 0.6 → 低于建议阈值
+    assert structured_score(f, g) < 0.5
 
 
 def test_scan_pairs_respects_yes_index_invert():

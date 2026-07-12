@@ -1,1 +1,1 @@
---pairs xarb-pairs.json --min-edge 0.005 --min-profit 0.1
+--pairs xarb-pairs.json --min-edge 0.005 --min-profit 0.05
