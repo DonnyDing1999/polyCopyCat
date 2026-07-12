@@ -343,6 +343,13 @@ class XarbScanner:
             e for e in self._kalshi.get_events(max_events=max_kalshi)
             if not e.event_ticker.startswith("KXMVE")  # 串关事件集合
         ]
+        if query:
+            needles = [q.lower() for q in query]
+            events = [
+                e for e in events
+                if any(needle in f"{e.title} {e.sub_title}".lower() for needle in needles)
+            ]
+            logger.info("按关键词过滤后 Kalshi 事件剩 %d 个", len(events))
         logger.info(
             "候选池：Polymarket %d 个（Yes/No 型），Kalshi 事件 %d 个",
             len(poly_prepped), len(events),

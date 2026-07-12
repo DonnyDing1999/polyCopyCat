@@ -321,6 +321,7 @@ def cmd_xarb_scan(args: argparse.Namespace) -> int:
                 max_poly=args.max_markets, max_kalshi=args.max_kalshi,
                 min_score=0.15, top=max(args.top, 10),
                 kalshi_series=args.kalshi_series, query=args.query,
+                event_probe=args.event_probe,
             )
             qualified = [s for s in scored if s["score"] >= args.min_score][: args.top]
             near_misses = [s for s in scored if s["score"] < args.min_score][:10]
@@ -629,7 +630,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_xarb.add_argument("--kalshi-series", default=None,
                         help="只在指定 Kalshi 系列内找配对（如 KXBTCD），縮小池子提高信噪比")
     p_xarb.add_argument("--query", nargs="+", default=None, metavar="词",
-                        help="建议模式：只配对问题里含任一关键词的 Polymarket 市场（如 --query france cup）")
+                        help="建议模式：只配对含任一关键词的市场/事件（如 --query france cup）")
+    p_xarb.add_argument("--event-probe", type=int, default=40,
+                        help="建议模式：粗配后拉取多少个 Kalshi 事件做精配（默认 40）")
     p_xarb.add_argument("--loop", type=float, default=None, metavar="秒",
                         help="配对模式：本地循环监控间隔秒数（比赛中用，CI 太慢；只打印达标机会）")
     p_xarb.add_argument("--min-score", type=float, default=0.5,
