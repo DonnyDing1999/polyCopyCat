@@ -359,6 +359,10 @@ def cmd_report(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="输出调试日志（放在子命令前后均可）",
+    )
+    common.add_argument(
         "--json", action="store_true",
         help="按 JSON lines 输出，方便接下游程序",
     )
