@@ -1,39 +1,21 @@
 未指定 --pairs，进入候选配对建议模式
-2026-07-12 07:35:33,208 INFO polycopycat.xarb: 候选池：Polymarket 269 个（Yes/No 型），Kalshi 6000 个
-2026-07-12 07:35:33,209 INFO polycopycat.xarb: Poly 样例: Will Argentina win the 2026 FIFA World Cup? | Will England win the 2026 FIFA World Cup? | Will Demeke Mekonnen be the next Prime Minister of Ethiopia?
-2026-07-12 07:35:33,209 INFO polycopycat.xarb: Kalshi 样例: yes Breanna Stewart: 15+,yes Jonquel Jones: 10+,yes Natisha Hiedeman: 10+,yes Kiki Iriafen: 10+,yes Sonia Citron: 10+ yes Breanna Stewart: 15+,yes Jonquel Jones: 10+,yes Natisha Hiedeman: 10+,yes Kiki Iriafen: 10+,yes Sonia Citron: 10+ | yes Pittsburgh,yes Baltimore,yes Washington,yes Boston,yes Chicago C,yes Miami,yes Detroit,yes Tampa Bay,yes Chicago WS,yes Minnesota,no Over 8.5 runs scored yes Pittsburgh,yes Baltimore,yes Washington,yes Boston,yes Chicago C,yes Miami,yes Detroit,yes Tampa Bay,yes Chicago WS,yes Minnesota,no Over 8.5 runs scored | yes Tarik Skubal: 6+,yes Zack Wheeler: 6+,yes J.T. Ginn: 3+,yes Kevin Gausman: 3+ yes Tarik Skubal: 6+,yes Zack Wheeler: 6+,yes J.T. Ginn: 3+,yes Kevin Gausman: 3+
+2026-07-12 07:41:41,137 INFO polycopycat.xarb: 候选池：Polymarket 269 个（Yes/No 型），Kalshi 32 个（过滤串关后，原始 10000）
+2026-07-12 07:41:41,137 INFO polycopycat.xarb: Poly 样例: Will Argentina win the 2026 FIFA World Cup? | Will England win the 2026 FIFA World Cup? | Will Demeke Mekonnen be the next Prime Minister of Ethiopia?
+2026-07-12 07:41:41,137 INFO polycopycat.xarb: Kalshi 样例: Trea Turner: 1+ stolen bases? Trea Turner: 1+ | Kyle Schwarber: 1+ stolen bases? Kyle Schwarber: 1+ | Bryce Harper: 1+ stolen bases? Bryce Harper: 1+
 
 ⚠️ 候选只是文本相似：两边结算条款（数据源/截止时间/措辞）必须人工核对等价后，才能写进配对文件用于价差扫描——配错对不是套利，是双边敞口。
-没有相似度 ≥ 0.4 的候选配对
+没有相似度 ≥ 0.5 的候选配对
 
 —— 未达标的最接近候选（仅供校准阈值参考）——
-  1. [未达标] 相似度 0.37（截止差 0.94 天）
-     Poly:   Exact Score: France 3 - 2 Spain?  [0x2bf00b32904490187b5264f74146a2a02db4fd0bb1eeec03bfec2098a25cd115]
-     Kalshi: yes Cody Bellinger: 2+,yes Cody Bellinger: 3+ yes Cody Bellinger: 2+,yes Cody Bellinger: 3+  [KXMVECROSSCATEGORY-S202636781AB13A4-13FFADFF055]
-  2. [未达标] 相似度 0.37（截止差 0.94 天）
-     Poly:   Exact Score: France 2 - 3 Spain?  [0xb35fefd7d2e14bb4d382c49c45aba0ae30b364fa2e6195a1949f2e83339c6181]
-     Kalshi: yes Cody Bellinger: 2+,yes Cody Bellinger: 3+ yes Cody Bellinger: 2+,yes Cody Bellinger: 3+  [KXMVECROSSCATEGORY-S202636781AB13A4-13FFADFF055]
-  3. [未达标] 相似度 0.35（截止差 0.94 天）
-     Poly:   Exact Score: France 2 - 1 Spain?  [0xf656cf9c2390d92527023b97273f8a3279a751135d28f157fe8ad98e856f3f50]
-     Kalshi: yes Cody Bellinger: 1+,yes Will Warren: 2+ yes Cody Bellinger: 1+,yes Will Warren: 2+  [KXMVESPORTSMULTIGAMEEXTENDED-S20265D126C9815D-77DD58D475D]
-  4. [未达标] 相似度 0.35（截止差 0.94 天）
-     Poly:   Exact Score: France 1 - 2 Spain?  [0x930902c2d044f9553dd49f032548351dcd9aeed9738e6c2acc24e5e16c1b8a89]
-     Kalshi: yes Cody Bellinger: 1+,yes Will Warren: 2+ yes Cody Bellinger: 1+,yes Will Warren: 2+  [KXMVESPORTSMULTIGAMEEXTENDED-S20265D126C9815D-77DD58D475D]
-  5. [未达标] 相似度 0.29（截止差 0.94 天）
-     Poly:   Exact Score: France 3 - 1 Spain?  [0x8cdffbee4407db3bb1a4aed98235441c23120746313b6ff6a64a4cd8288a4159]
-     Kalshi: yes Bobby Witt Jr.: 1+,yes Shane Baz: 3+,yes Seth Lugo: 3+ yes Bobby Witt Jr.: 1+,yes Shane Baz: 3+,yes Seth Lugo: 3+  [KXMVESPORTSMULTIGAMEEXTENDED-S202677FE44C2C1C-C14AD23311A]
-  6. [未达标] 相似度 0.26（截止差 0.94 天）
-     Poly:   Exact Score: France 1 - 1 Spain?  [0x28f26198c908f5f2cd2abdfd2e42afa09251afdcf49af9b38aedb09b035c0a68]
-     Kalshi: yes Miami,yes CJ Abrams: 1+ yes Miami,yes CJ Abrams: 1+  [KXMVESPORTSMULTIGAMEEXTENDED-S2026AFD1ECF5C2E-F39306258A9]
-  7. [未达标] 相似度 0.26（截止差 1.05 天）
+  1. [未达标] 文本匹配 0.29（截止差 0.02 天）
      Poly:   Kylian Mbappé: 2+ goals  [0xe130f000e99ed76668f583fa720ee913ab433c67811d12f584d02aefcd2e2cb9]
-     Kalshi: yes Trea Turner: 2+,yes Ketel Marte: 2+ yes Trea Turner: 2+,yes Ketel Marte: 2+  [KXMVESPORTSMULTIGAMEEXTENDED-S2026D8D67B160E4-4D9052BE101]
-  8. [未达标] 相似度 0.26（截止差 2.84 天）
-     Poly:   Will Anthropic extend Claude Fable 5 paid-plan access again by July 12?  [0x995c6e62d515561f2f539b6f9ec1b7d06324258bb67d120fdab4641d583ce469]
-     Kalshi: yes Los Angeles D,no Over 12.5 runs scored,no Over 12.5 runs scored,no Over 12.5 runs scored,no Over 12.5 runs scored,no Over 12.5 runs scored yes Los Angeles D,no Over 12.5 runs scored,no Over 12.5 runs scored,no Over 12.5 runs scored,no Over 12.5 runs scored,no Over 12.5 runs scored  [KXMVESPORTSMULTIGAMEEXTENDED-S2026EC044C053BA-F06C42C194B]
-  9. [未达标] 相似度 0.25（截止差 1.05 天）
-     Poly:   Exact Score: France 2 - 2 Spain?  [0xd5bfdea40162994db6189b1fcc8d9dfb383771887b8b614d1672b4c79c520c65]
-     Kalshi: yes Trea Turner: 2+,yes Ketel Marte: 2+ yes Trea Turner: 2+,yes Ketel Marte: 2+  [KXMVESPORTSMULTIGAMEEXTENDED-S2026D8D67B160E4-4D9052BE101]
- 10. [未达标] 相似度 0.24（截止差 1.05 天）
+     Kalshi: Yordan Alvarez: 2+ RBIs? Yordan Alvarez: 2+  [KXMLBRBI-26JUL121435HOUTEX-HOUYALVAREZ44-2]
+  2. [未达标] 文本匹配 0.28（截止差 0.02 天）
      Poly:   Exact Score: France 3 - 3 Spain?  [0x3dfeb44e97dbd3e9614b4c42a7e3e251cfb1a3efcee077e3e9c44a4448401596]
-     Kalshi: yes Los Angeles D,yes Kevin Gausman: 3+ yes Los Angeles D,yes Kevin Gausman: 3+  [KXMVECROSSCATEGORY-S20267511118F8DA-E4719F2E5E2]
+     Kalshi: Yordan Alvarez: 3+ RBIs? Yordan Alvarez: 3+  [KXMLBRBI-26JUL121435HOUTEX-HOUYALVAREZ44-3]
+  3. [未达标] 文本匹配 0.28（截止差 0.02 天）
+     Poly:   Exact Score: France 1 - 1 Spain?  [0x28f26198c908f5f2cd2abdfd2e42afa09251afdcf49af9b38aedb09b035c0a68]
+     Kalshi: Yordan Alvarez: 1+ RBIs? Yordan Alvarez: 1+  [KXMLBRBI-26JUL121435HOUTEX-HOUYALVAREZ44-1]
+  4. [未达标] 文本匹配 0.28（截止差 0.02 天）
+     Poly:   Exact Score: France 2 - 2 Spain?  [0xd5bfdea40162994db6189b1fcc8d9dfb383771887b8b614d1672b4c79c520c65]
+     Kalshi: Yordan Alvarez: 2+ RBIs? Yordan Alvarez: 2+  [KXMLBRBI-26JUL121435HOUTEX-HOUYALVAREZ44-2]
