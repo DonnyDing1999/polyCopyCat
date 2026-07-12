@@ -228,6 +228,8 @@ class KalshiClient:
                 raise KalshiError(f"预期 markets 列表，实际是: {data!r:.120}")
             if not rows:
                 break
+            if not markets and rows:
+                logger.debug("markets 首行原始响应: %.600s", repr(rows[0]))
             markets.extend(
                 KalshiMarket.from_api(row) for row in rows if isinstance(row, dict)
             )
@@ -240,6 +242,7 @@ class KalshiClient:
         data = self._get(f"/markets/{ticker}/orderbook", None)
         if not isinstance(data, dict):
             raise KalshiError(f"预期订单簿对象，实际是: {data!r:.120}")
+        logger.debug("orderbook %s 原始响应: %.600s", ticker, repr(data))
         return KalshiBook.from_api(data)
 
     def _get(self, path: str, params: dict[str, Any] | None) -> Any:
