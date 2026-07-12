@@ -1,0 +1,53 @@
+name: scout
+
+# 两种触发方式：
+# 1. 推送修改 .scout-request（一行一个或空格分隔的待评估地址）
+# 2. 在 Actions 页手动 Run workflow 并填地址
+on:
+  push:
+    paths:
+      - ".scout-request"
+  workflow_dispatch:
+    inputs:
+      addresses:
+        description: "要评估的地址（空格分隔）"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency: scout
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装
+        run: pip install -e .
+
+      - name: 运行 scout
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ADDRS="${{ github.event.inputs.addresses }}"
+          else
+            ADDRS="$(tr '\n' ' ' < .scout-request)"
+          fi
+          echo "评估地址: $ADDRS"
+          mkdir -p scout-results
+          polycopycat scout $ADDRS --pages 2 --json > scout-results/latest.json || true
+          polycopycat scout $ADDRS --pages 2 | tee scout-results/latest.txt || true
+
+      - name: 提交结果
+        run: |
+          git config user.name "scout-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add scout-results
+          git commit -m "scout 评估结果 [skip ci]" || echo "结果无变化"
+          git push
