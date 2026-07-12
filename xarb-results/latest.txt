@@ -1,2 +1,17 @@
 对 13 条已确认配对算价差（Kalshi 手续费已计入）……
 已确认配对中当前没有达到阈值的跨所价差
+
+—— 各配对当前最优组合（负边际 = 无套利，差多少一目了然）——
+  [无报价] Will Bernie Sanders win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-BS  至少一边没有可成交报价（订单簿为空）
+  [无报价] Will Ro Khanna win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-RKHA  至少一边没有可成交报价（订单簿为空）
+  [无报价] Will Mark Cuban win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-MC  至少一边没有可成交报价（订单簿为空）
+  [无报价] Will Mark Kelly win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-MK  至少一边没有可成交报价（订单簿为空）
+  [无报价] Will Chris Murphy win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-CMUR  至少一边没有可成交报价（订单簿为空）
+  [无报价] Will Pete Buttigieg win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-PB  至少一边没有可成交报价（订单簿为空）
+  [无报价] Will Ruben Gallego win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-RGAL  至少一边没有可成交报价（订单簿为空）
+  [无报价] Will Beto O’Rourke win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-BORO  至少一边没有可成交报价（订单簿为空）
+  [无报价] Will Andrew Yang win the 2028 Democratic presidential nomination? ↔ KXPRESNOMD-28-AYAN  至少一边没有可成交报价（订单簿为空）
+  [无报价] Will J.D. Vance win the 2028 Republican presidential nomination? ↔ KXPRESNOMR-28-JDV  至少一边没有可成交报价（订单簿为空）
+  [无报价] Will Kristi Noem win the 2028 Republican presidential nomination? ↔ KXPRESNOMR-28-KNOE  至少一边没有可成交报价（订单簿为空）
+  [无报价] Will Mike Pence win the 2028 Republican presidential nomination? ↔ KXPRESNOMR-28-MPEN  至少一边没有可成交报价（订单簿为空）
+  [无报价] Will the US confirm that aliens exist before 2027? ↔ KXALIENS-27  至少一边没有可成交报价（订单簿为空）
