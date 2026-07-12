@@ -86,6 +86,27 @@ class KalshiMarket:
 
 
 @dataclass(frozen=True)
+class KalshiEvent:
+    """事件（一组相关市场的父级）：数量远少于市场，适合做粗配。"""
+
+    event_ticker: str
+    series_ticker: str
+    title: str
+    sub_title: str = ""
+    category: str = ""
+
+    @classmethod
+    def from_api(cls, raw: dict[str, Any]) -> "KalshiEvent":
+        return cls(
+            event_ticker=str(raw.get("event_ticker", "")),
+            series_ticker=str(raw.get("series_ticker", "")),
+            title=str(raw.get("title", "")),
+            sub_title=str(raw.get("sub_title", "")),
+            category=str(raw.get("category", "")),
+        )
+
+
+@dataclass(frozen=True)
 class KalshiLevel:
     price: float  # 美元
     count: float  # 张数
@@ -152,12 +173,38 @@ class KalshiClient:
         self.max_retries = max_retries
         self.backoff = backoff
 
+    def get_events(self, *, status: str = "open", max_events: int = 3000) -> list[KalshiEvent]:
+        """分页拉事件目录（每页上限 200）。"""
+        events: list[KalshiEvent] = []
+        cursor = ""
+        for _ in range(100):
+            if len(events) >= max_events:
+                break
+            params: dict[str, Any] = {
+                "status": status,
+                "limit": min(200, max_events - len(events)),
+            }
+            if cursor:
+                params["cursor"] = cursor
+            data = self._get("/events", params)
+            rows = data.get("events") if isinstance(data, dict) else None
+            if not isinstance(rows, list):
+                raise KalshiError(f"预期 events 列表，实际是: {data!r:.120}")
+            if not rows:
+                break
+            events.extend(KalshiEvent.from_api(row) for row in rows if isinstance(row, dict))
+            cursor = str(data.get("cursor") or "")
+            if not cursor:
+                break
+        return events[:max_events]
+
     def get_markets(
         self,
         *,
         status: str = "open",
         max_markets: int = 1000,
         series_ticker: str | None = None,
+        event_ticker: str | None = None,
     ) -> list[KalshiMarket]:
         """分页拉市场列表（自带顶档报价，扫描用它就够了）。"""
         markets: list[KalshiMarket] = []
@@ -171,6 +218,8 @@ class KalshiClient:
             }
             if series_ticker:
                 params["series_ticker"] = series_ticker
+            if event_ticker:
+                params["event_ticker"] = event_ticker
             if cursor:
                 params["cursor"] = cursor
             data = self._get("/markets", params)

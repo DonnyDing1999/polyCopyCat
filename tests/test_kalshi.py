@@ -97,6 +97,29 @@ def test_taker_fee_formula():
     assert taker_fee(0.0) == 0.0
 
 
+def test_events_pagination_and_parse():
+    pages = [
+        {"cursor": "c2", "events": [{"event_ticker": "EV-A", "series_ticker": "S",
+                                     "title": "Event A"}]},
+        {"cursor": "", "events": [{"event_ticker": "EV-B", "series_ticker": "S",
+                                   "title": "Event B", "sub_title": "sub"}]},
+    ]
+    session = FakeSession([FakeResponse(payload=p) for p in pages])
+    client = KalshiClient("https://kalshi.test", session=session, backoff=0.0)
+    events = client.get_events(max_events=10)
+    assert [e.event_ticker for e in events] == ["EV-A", "EV-B"]
+    assert events[1].sub_title == "sub"
+    assert session.requests[1][1]["cursor"] == "c2"
+
+
+def test_markets_event_ticker_param():
+    payload = {"cursor": "", "markets": [market_row()]}
+    session = FakeSession([FakeResponse(payload=payload)])
+    client = KalshiClient("https://kalshi.test", session=session, backoff=0.0)
+    client.get_markets(event_ticker="EV-X")
+    assert session.requests[0][1]["event_ticker"] == "EV-X"
+
+
 def test_http_error_becomes_kalshi_error():
     client = KalshiClient("https://kalshi.test",
                           session=FakeSession([FakeResponse(status_code=500)] * 3), backoff=0.0)

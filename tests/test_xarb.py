@@ -104,9 +104,11 @@ class FakeClob:
 
 
 class FakeKalshi:
-    def __init__(self, books=None, markets=None, error=None):
+    def __init__(self, books=None, markets=None, events=None, event_markets=None, error=None):
         self.books = books or {}
         self.markets = markets or []
+        self.events = events or []
+        self.event_markets = event_markets or {}
         self.error = error
 
     def get_orderbook(self, ticker):
@@ -114,7 +116,12 @@ class FakeKalshi:
             raise self.error
         return self.books[ticker]
 
-    def get_markets(self, **kwargs):
+    def get_events(self, **kwargs):
+        return self.events
+
+    def get_markets(self, *, event_ticker=None, series_ticker=None, **kwargs):
+        if event_ticker is not None:
+            return self.event_markets.get(event_ticker, [])
         return self.markets
 
 
@@ -181,23 +188,37 @@ def test_scan_pairs_skips_unknown_market_and_kalshi_failure():
     assert scanner.scan_pairs([PairConfig("0xc1", "KX-1")]) == []  # kalshi 挂了跳过
 
 
-def kalshi_market(ticker="KX-1", title="Bitcoin above 65000 on July 14?"):
+def kalshi_market(ticker="KX-1", title="Bitcoin above 65000 on July 14?",
+                  event_ticker="EV-1", close_time="2026-07-14T12:00:00Z"):
     return KalshiMarket(
-        ticker=ticker, event_ticker="KX", title=title, subtitle="",
-        close_time="2026-07-14T12:00:00Z", yes_bid=0.4, yes_ask=0.45,
+        ticker=ticker, event_ticker=event_ticker, title=title, subtitle="",
+        close_time=close_time, yes_bid=0.4, yes_ask=0.45,
         no_bid=0.5, no_ask=0.6, volume_24h=100, liquidity=1000, status="open",
     )
 
 
-def test_suggest_pairs_matches_and_filters():
+def kalshi_event(event_ticker="EV-1", title="Bitcoin above 65000 on July 14?"):
+    from polycopycat.kalshi import KalshiEvent
+
+    return KalshiEvent(event_ticker=event_ticker, series_ticker="KX", title=title)
+
+
+def test_suggest_pairs_event_funnel_matches_and_filters():
     poly_markets = [
         poly_market(cid="0xc1", question="Will Bitcoin be above 65000 on July 14?"),
         poly_market(cid="0xc2", question="Will it rain in Paris tomorrow?"),
     ]
-    kalshi = FakeKalshi(markets=[
-        kalshi_market(ticker="KX-BTC", title="Bitcoin above 65000 on July 14?"),
-        kalshi_market(ticker="KX-NBA", title="Lakers to win the NBA finals"),
-    ])
+    kalshi = FakeKalshi(
+        events=[
+            kalshi_event("EV-BTC", "Bitcoin above 65000 on July 14?"),
+            kalshi_event("EV-NBA", "Lakers to win the NBA finals"),
+        ],
+        event_markets={
+            "EV-BTC": [kalshi_market(ticker="KX-BTC", event_ticker="EV-BTC")],
+            "EV-NBA": [kalshi_market(ticker="KX-NBA", event_ticker="EV-NBA",
+                                     title="Lakers to win the NBA finals")],
+        },
+    )
     scanner = make_scanner(poly_markets, {}, kalshi)
     suggestions = scanner.suggest_pairs(min_score=0.5, top=10)
     assert len(suggestions) == 1
@@ -208,9 +229,13 @@ def test_suggest_pairs_matches_and_filters():
 
 def test_suggest_pairs_structured_beats_weak_text():
     poly_markets = [poly_market(cid="0xbtc", question="Bitcoin Up or Down - July 12, 3AM ET")]
-    kalshi = FakeKalshi(markets=[
-        kalshi_market(ticker="KX-BTC-H", title="Bitcoin price today at 3am EDT (Jul 12)?"),
-    ])
+    kalshi = FakeKalshi(
+        events=[kalshi_event("EV-BTC-H", "Bitcoin price today at 3am EDT (Jul 12)?")],
+        event_markets={"EV-BTC-H": [
+            kalshi_market(ticker="KX-BTC-H", event_ticker="EV-BTC-H",
+                          title="Bitcoin price today at 3am EDT (Jul 12)?"),
+        ]},
+    )
     scanner = make_scanner(poly_markets, {}, kalshi)
     suggestions = scanner.suggest_pairs(min_score=0.5, top=10)
     assert len(suggestions) == 1
@@ -218,21 +243,41 @@ def test_suggest_pairs_structured_beats_weak_text():
     assert suggestions[0]["kalshi_ticker"] == "KX-BTC-H"
 
 
-def test_suggest_pairs_filters_parlay_markets():
+def test_suggest_pairs_skips_parlay_events_and_markets():
     poly_markets = [poly_market(cid="0xc1", question="Will Cody Bellinger score 2+?")]
-    kalshi = FakeKalshi(markets=[
-        kalshi_market(ticker="KX-PARLAY", title="yes Cody Bellinger: 2+,yes Will Warren: 2+"),
-    ])
+    kalshi = FakeKalshi(
+        events=[
+            kalshi_event("KXMVE-1", "Cody Bellinger: 2+"),   # 串关事件集合，直接跳过
+            kalshi_event("EV-OK", "Cody Bellinger: 2+ home runs?"),
+        ],
+        event_markets={
+            "KXMVE-1": [kalshi_market(ticker="KX-P1", event_ticker="KXMVE-1",
+                                      title="yes Cody Bellinger: 2+,yes Will Warren: 2+")],
+            "EV-OK": [kalshi_market(ticker="KX-P2", event_ticker="EV-OK",
+                                    title="yes Cody Bellinger: 2+,yes Will Warren: 2+")],
+        },
+    )
     scanner = make_scanner(poly_markets, {}, kalshi)
+    # KXMVE 事件被跳过；EV-OK 事件命中但旗下市场是串关 → 也被滤掉
     assert scanner.suggest_pairs(min_score=0.2, top=10) == []
 
 
 def test_suggest_pairs_rejects_far_close_times():
     poly_markets = [poly_market(cid="0xc1", question="Bitcoin above 65000 on July 14?")]
-    km = KalshiMarket(
-        ticker="KX-BTC", event_ticker="KX", title="Bitcoin above 65000 on July 14?",
-        subtitle="", close_time="2026-08-30T00:00:00Z", yes_bid=0.4, yes_ask=0.45,
-        no_bid=0.5, no_ask=0.6, volume_24h=100, liquidity=1000, status="open",
+    kalshi = FakeKalshi(
+        events=[kalshi_event("EV-BTC", "Bitcoin above 65000 on July 14?")],
+        event_markets={"EV-BTC": [
+            kalshi_market(ticker="KX-BTC", event_ticker="EV-BTC",
+                          close_time="2026-08-30T00:00:00Z"),
+        ]},
     )
-    scanner = make_scanner(poly_markets, {}, FakeKalshi(markets=[km]))
+    scanner = make_scanner(poly_markets, {}, kalshi)
     assert scanner.suggest_pairs(min_score=0.5, max_gap_days=3.0) == []
+
+
+def test_suggest_pairs_series_mode_bypasses_funnel():
+    poly_markets = [poly_market(cid="0xc1", question="Bitcoin above 65000 on July 14?")]
+    kalshi = FakeKalshi(markets=[kalshi_market(ticker="KX-BTC")])
+    scanner = make_scanner(poly_markets, {}, kalshi)
+    suggestions = scanner.suggest_pairs(min_score=0.5, kalshi_series="KXBTCD")
+    assert len(suggestions) == 1 and suggestions[0]["kalshi_ticker"] == "KX-BTC"

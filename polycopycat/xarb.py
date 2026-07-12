@@ -289,44 +289,126 @@ class XarbScanner:
         self,
         *,
         max_poly: int = 300,
-        max_kalshi: int = 2000,
+        max_kalshi: int = 3000,
         min_score: float = 0.5,
         max_gap_days: float = 3.0,
         top: int = 20,
         kalshi_series: str | None = None,
+        event_probe: int = 40,
     ) -> list[dict[str, Any]]:
+        """两级漏斗提名候选配对。
+
+        Kalshi 的市场空间被自动生成的串关盘淹没（实测 1 万个市场里
+        单事件市场只有几十个），直接翻市场列表找不到可配对象。改走
+        事件目录：事件数量少且没有串关，先用事件标题粗配，再只对
+        命中的事件拉取旗下市场做精配。指定 kalshi_series 时跳过漏斗
+        直接在该系列的市场里配。
+        """
         poly_markets = [
             m for m in self._poly.discover_markets(limit=max_poly)
             if [o.lower() for o in m.get("outcomes", [])[:2]] == ["yes", "no"]
         ]
-        kalshi_all = self._kalshi.get_markets(
-            max_markets=max_kalshi, series_ticker=kalshi_series
-        )
-        kalshi_markets = [
-            m for m in kalshi_all if not is_parlay(f"{m.title} {m.subtitle}")
+        poly_prepped = [
+            (pm, _tokens(pm["question"]), extract_features(pm["question"]))
+            for pm in poly_markets
         ]
-        kalshi_markets.sort(key=lambda m: -(m.volume_24h or 0))
+
+        if kalshi_series:
+            kalshi_markets = [
+                m for m in self._kalshi.get_markets(
+                    max_markets=max_kalshi, series_ticker=kalshi_series
+                )
+                if not is_parlay(f"{m.title} {m.subtitle}")
+            ]
+            logger.info(
+                "候选池：Polymarket %d 个，Kalshi 系列 %s 市场 %d 个",
+                len(poly_prepped), kalshi_series, len(kalshi_markets),
+            )
+            candidates = [("", km) for km in kalshi_markets]
+            return self._match_markets(
+                poly_prepped, candidates, min_score=min_score,
+                max_gap_days=max_gap_days, top=top,
+            )
+
+        events = [
+            e for e in self._kalshi.get_events(max_events=max_kalshi)
+            if not e.event_ticker.startswith("KXMVE")  # 串关事件集合
+        ]
         logger.info(
-            "候选池：Polymarket %d 个（Yes/No 型），Kalshi %d 个（过滤串关后，原始 %d）",
-            len(poly_markets), len(kalshi_markets), len(kalshi_all),
+            "候选池：Polymarket %d 个（Yes/No 型），Kalshi 事件 %d 个",
+            len(poly_prepped), len(events),
         )
         for pool, rows in (
             ("Poly", [m["question"] for m in poly_markets[:3]]),
-            ("Kalshi", [f"{m.title} {m.subtitle}".strip() for m in kalshi_markets[:3]]),
+            ("Kalshi事件", [f"{e.title} {e.sub_title}".strip() for e in events[:3]]),
         ):
             logger.info("%s 样例: %s", pool, " | ".join(rows) or "（空）")
 
-        prepped = [
-            (km, _tokens(title), extract_features(title))
-            for km in kalshi_markets
-            for title in [f"{km.title} {km.subtitle}".strip()]
+        # 一级：事件标题粗配
+        coarse_floor = max(0.25, min_score * 0.6)
+        event_prepped = [
+            (ev, _tokens(title), extract_features(title))
+            for ev in events
+            for title in [f"{ev.title} {ev.sub_title}".strip()]
         ]
+        coarse_hits: dict[str, float] = {}
+        for _, poly_tokens, poly_features in poly_prepped:
+            for ev, ev_tokens, ev_features in event_prepped:
+                score = max(
+                    _score_token_sets(poly_tokens, ev_tokens),
+                    structured_score(poly_features, ev_features),
+                )
+                if score >= coarse_floor:
+                    coarse_hits[ev.event_ticker] = max(
+                        coarse_hits.get(ev.event_ticker, 0.0), score
+                    )
+        probe_events = sorted(coarse_hits, key=lambda t: -coarse_hits[t])[:event_probe]
+        logger.info(
+            "事件粗配命中 %d 个，拉取前 %d 个事件的市场做精配",
+            len(coarse_hits), len(probe_events),
+        )
+
+        # 二级：命中事件旗下市场精配（用「事件标题 + 市场标题」做文本，
+        # 因为 Kalshi 的市场标题常常只是子标题，如 "Argentina"）
+        event_by_ticker = {e.event_ticker: e for e in events}
+        candidates: list[tuple[str, Any]] = []
+        for ticker in probe_events:
+            try:
+                rows = self._kalshi.get_markets(event_ticker=ticker, max_markets=200)
+            except Exception as exc:  # noqa: BLE001 —— 单事件失败不拖累整轮
+                logger.warning("拉取事件 %s 的市场失败: %s", ticker, exc)
+                continue
+            event_title = ""
+            if ticker in event_by_ticker:
+                ev = event_by_ticker[ticker]
+                event_title = f"{ev.title} {ev.sub_title}".strip()
+            candidates.extend(
+                (event_title, km) for km in rows
+                if not is_parlay(f"{km.title} {km.subtitle}")
+            )
+        return self._match_markets(
+            poly_prepped, candidates, min_score=min_score,
+            max_gap_days=max_gap_days, top=top,
+        )
+
+    def _match_markets(
+        self,
+        poly_prepped: list[tuple],
+        candidates: list[tuple[str, Any]],
+        *,
+        min_score: float,
+        max_gap_days: float,
+        top: int,
+    ) -> list[dict[str, Any]]:
+        """市场级精配：candidates 为 (所属事件标题, KalshiMarket)。"""
+        prepped = []
+        for event_title, km in candidates:
+            full = f"{event_title} {km.title} {km.subtitle}".strip()
+            prepped.append((km, full, _tokens(full), extract_features(full)))
         suggestions = []
-        for pm in poly_markets:
-            poly_tokens = _tokens(pm["question"])
-            poly_features = extract_features(pm["question"])
+        for pm, poly_tokens, poly_features in poly_prepped:
             best = None
-            for km, kalshi_tokens, kalshi_features in prepped:
+            for km, full, kalshi_tokens, kalshi_features in prepped:
                 text_score = _score_token_sets(poly_tokens, kalshi_tokens)
                 struct_score = structured_score(poly_features, kalshi_features)
                 score = max(text_score, struct_score)
@@ -336,9 +418,12 @@ class XarbScanner:
                 if gap is not None and gap > max_gap_days:
                     continue
                 if best is None or score > best[0]:
-                    best = (score, km, gap, "structured" if struct_score > text_score else "text")
+                    best = (
+                        score, km, full, gap,
+                        "structured" if struct_score > text_score else "text",
+                    )
             if best is not None:
-                score, km, gap, match_type = best
+                score, km, full, gap, match_type = best
                 suggestions.append({
                     "score": round(score, 3),
                     "match_type": match_type,
@@ -346,7 +431,7 @@ class XarbScanner:
                     "poly_condition_id": pm["condition_id"],
                     "poly_question": pm["question"],
                     "kalshi_ticker": km.ticker,
-                    "kalshi_title": f"{km.title} {km.subtitle}".strip(),
+                    "kalshi_title": full,
                 })
         suggestions.sort(key=lambda s: -s["score"])
         return suggestions[:top]
