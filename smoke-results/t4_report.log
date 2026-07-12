@@ -1,0 +1,17 @@
+# 账本 smoke-results/smoke-ledger.sqlite3
+信号统计: executed=6, filtered=2, skipped=105
+已实现盈亏: 累计 $+3.66，今日 $+3.66
+
+## 当前持仓（4 个）
+       12.52 份 @ 0.591  成本 $    7.40  已实现 $   +3.66  [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+       42.20 份 @ 0.430  成本 $   18.15  已实现 $   +0.00  [Yes] Will France win on 2026-07-14?
+       31.74 份 @ 0.610  成本 $   19.36  已实现 $   +0.00  [Bilibili Gaming] LoL: Bilibili Gaming vs Hanwha Life Esports (BO5) - Mid-Season Invitational Playoffs
+       44.44 份 @ 0.440  成本 $   19.55  已实现 $   +0.00  [Down] Bitcoin Up or Down - July 12, 3AM ET
+
+## 最近订单（最多 20 条）
+  #6 paper BUY 6.65@≤0.930 → filled 成交 6.65@0.910 滑点 +0.000 pnl +0.00  [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+  #5 paper SELL 5.81@≤0.840 → filled 成交 5.81@0.860 滑点 -0.010 pnl +3.66  [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+  #4 paper BUY 42.20@≤0.440 → filled 成交 42.20@0.430 滑点 +0.000 pnl +0.00  [Yes] Will France win on 2026-07-14?
+  #3 paper BUY 11.68@≤0.240 → filled 成交 11.68@0.230 滑点 +0.009 pnl +0.00  [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+  #2 paper BUY 31.74@≤0.630 → filled 成交 31.74@0.610 滑点 +0.000 pnl +0.00  [Bilibili Gaming] LoL: Bilibili Gaming vs Hanwha Life Esports (BO5) - Mid-Season Invitational Playoffs
+  #1 paper BUY 44.44@≤0.450 → filled 成交 44.44@0.440 滑点 +0.000 pnl +0.00  [Down] Bitcoin Up or Down - July 12, 3AM ET

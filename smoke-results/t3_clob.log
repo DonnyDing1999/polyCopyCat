@@ -1,0 +1,3 @@
+market: tick=0.001 min=5.0 negRisk=False accepting=True
+book: bids=1 asks=19
+PASS

@@ -1,0 +1,123 @@
+2026-07-12 07:00:16,500 INFO polycopycat.engine.engine: 正在初始化目标持仓镜像……
+2026-07-12 07:00:17,132 INFO polycopycat.engine.engine: 跟单引擎已启动（paper 模式，3 个目标，滑点上限 0.020）
+2026-07-12 07:00:17,133 INFO polycopycat.watcher: 开始监控 3 个地址，每 30.0 秒轮询一次: 0x13868e88acbe44daa175fe8051cf212f5442373a, 0xeebde7a0e019a63e6b476eb425505b7b3e6eba30, 0xe9076a87c5ed90ef16e6fe6529c943baeca0cff6
+2026-07-12 07:00:17,289 INFO polycopycat.watcher: 0x13868e88acbe44daa175fe8051cf212f5442373a 基线建立完成，已缓存最近 100 条成交
+2026-07-12 07:00:17,319 INFO polycopycat.watcher: 0xeebde7a0e019a63e6b476eb425505b7b3e6eba30 基线建立完成，已缓存最近 100 条成交
+2026-07-12 07:00:17,470 INFO polycopycat.watcher: 0xe9076a87c5ed90ef16e6fe6529c943baeca0cff6 基线建立完成，已缓存最近 100 条成交
+2026-07-12 07:00:17,645 INFO websocket: Websocket connected
+2026-07-12 07:00:17,645 INFO polycopycat.stream: 实时成交流已连接: wss://ws-live-data.polymarket.com
+2026-07-12 07:00:24,468 INFO polycopycat.engine.engine: 跳过: 计划量 1.41 份低于市场最小下单量 5.00（计划金额 $0.79） —— 0xe907…cff6 BUY 28.87 @ 0.550 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:24,757 INFO polycopycat.engine.engine: 跳过: 计划量 0.79 份低于市场最小下单量 5.00（计划金额 $0.09） —— 0xe907…cff6 BUY 17.27 @ 0.110 [] 
+2026-07-12 07:00:25,334 INFO polycopycat.engine.engine: 跳过: 计划量 1.86 份低于市场最小下单量 5.00（计划金额 $0.93） —— 0xe907…cff6 BUY 38.14 @ 0.490 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:00:31,400 INFO polycopycat.engine.engine: 跳过: 计划量 0.24 份低于市场最小下单量 5.00（计划金额 $0.14） —— 0xeebd…ba30 BUY 5.00 @ 0.560 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:31,468 INFO polycopycat.engine.engine: 跳过: 计划量 1.97 份低于市场最小下单量 5.00（计划金额 $1.13） —— 0xeebd…ba30 BUY 41.00 @ 0.550 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:35,172 INFO polycopycat.engine.engine: 跳过: 计划量 1.98 份低于市场最小下单量 5.00（计划金额 $1.17） —— 0xeebd…ba30 BUY 41.00 @ 0.572 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:35,178 INFO polycopycat.engine.engine: 跳过: 计划量 0.96 份低于市场最小下单量 5.00（计划金额 $0.52） —— 0xeebd…ba30 BUY 20.00 @ 0.520 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:00:35,263 INFO polycopycat.engine.engine: 跳过: 计划量 0.24 份低于市场最小下单量 5.00（计划金额 $0.15） —— 0xeebd…ba30 BUY 5.00 @ 0.590 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:35,307 INFO polycopycat.engine.engine: 跳过: 计划量 0.24 份低于市场最小下单量 5.00（计划金额 $0.14） —— 0xeebd…ba30 BUY 5.00 @ 0.580 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:37,739 INFO polycopycat.engine.engine: 跳过: 计划量 0.39 份低于市场最小下单量 5.00（计划金额 $0.23） —— 0xe907…cff6 BUY 8.05 @ 0.580 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:42,354 INFO polycopycat.engine.engine: 跳过: 计划量 2.12 份低于市场最小下单量 5.00（计划金额 $0.93） —— 0xe907…cff6 BUY 43.47 @ 0.430 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:44,240 INFO polycopycat.engine.engine: 跳过: 计划量 1.94 份低于市场最小下单量 5.00（计划金额 $0.89） —— 0xeebd…ba30 BUY 40.00 @ 0.447 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:44,268 INFO polycopycat.engine.engine: 跳过: 计划量 0.23 份低于市场最小下单量 5.00（计划金额 $0.11） —— 0xeebd…ba30 BUY 5.00 @ 0.450 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:44,317 INFO polycopycat.engine.engine: 跳过: 计划量 0.23 份低于市场最小下单量 5.00（计划金额 $0.11） —— 0xeebd…ba30 BUY 5.00 @ 0.450 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:51,507 INFO polycopycat.engine.engine: 跳过: 计划量 0.81 份低于市场最小下单量 5.00（计划金额 $0.47） —— 0xe907…cff6 BUY 16.68 @ 0.560 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:52,407 INFO polycopycat.engine.engine: 跳过: 计划量 1.39 份低于市场最小下单量 5.00（计划金额 $0.79） —— 0xe907…cff6 BUY 28.36 @ 0.560 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:54,167 INFO polycopycat.engine.engine: 跳过: 计划量 1.52 份低于市场最小下单量 5.00（计划金额 $0.70） —— 0xe907…cff6 BUY 31.13 @ 0.450 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:00:55,920 INFO polycopycat.engine.engine: 跳过: 计划量 0.88 份低于市场最小下单量 5.00（计划金额 $0.48） —— 0xe907…cff6 BUY 17.96 @ 0.530 [Bilibili Gaming] First Blood in Game 3?
+2026-07-12 07:00:58,619 INFO polycopycat.engine.engine: 跳过: 自己没有该市场持仓，忽略卖出信号 —— 0xe907…cff6 SELL 54.15 @ 0.051 [Kuaishou Gaming] Honor of Kings: JD Gaming vs Kuaishou Gaming (BO5) - King Pro League Stage 2 Group S
+2026-07-12 07:01:00,517 INFO polycopycat.engine.notify: [通知] 📝 纸面 BUY 44.44 份 @≤0.450 [Down] Bitcoin Up or Down - July 12, 3AM ET → 成交 44.44 @ 0.440（$19.55，滑点 +0.000） 跟随 0xe907…cff6
+2026-07-12 07:01:00,518 INFO polycopycat.engine.engine: 跳过: 计划量 0.40 份低于市场最小下单量 5.00（计划金额 $0.23） —— 0xe907…cff6 BUY 8.34 @ 0.560 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:03,334 INFO polycopycat.engine.engine: 跳过: 计划量 0.24 份低于市场最小下单量 5.00（计划金额 $0.14） —— 0xeebd…ba30 BUY 5.00 @ 0.570 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:03,428 INFO polycopycat.engine.engine: 跳过: 计划量 0.96 份低于市场最小下单量 5.00（计划金额 $0.54） —— 0xeebd…ba30 BUY 20.00 @ 0.540 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:01:03,653 INFO polycopycat.engine.engine: 跳过: 计划量 1.98 份低于市场最小下单量 5.00（计划金额 $1.19） —— 0xeebd…ba30 BUY 41.00 @ 0.580 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:05,212 INFO polycopycat.engine.engine: 跳过: 计划量 1.53 份低于市场最小下单量 5.00（计划金额 $0.95） —— 0xe907…cff6 BUY 31.21 @ 0.610 [Bilibili Gaming] LoL: Bilibili Gaming vs Hanwha Life Esports (BO5) - Mid-Season Invitational Playoffs
+2026-07-12 07:01:08,823 INFO polycopycat.engine.engine: 跳过: 计划量 0.24 份低于市场最小下单量 5.00（计划金额 $0.15） —— 0xeebd…ba30 BUY 5.00 @ 0.590 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:09,047 INFO polycopycat.engine.engine: 跳过: 计划量 0.24 份低于市场最小下单量 5.00（计划金额 $0.15） —— 0xeebd…ba30 BUY 5.00 @ 0.601 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:09,081 INFO polycopycat.engine.engine: 过滤: 目标成交金额 $0.12 低于阈值 $1.00 —— 0xeebd…ba30 BUY 0.21 @ 0.590 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:11,410 INFO polycopycat.engine.engine: 跳过: 自己没有该市场持仓，忽略卖出信号 —— 0xe907…cff6 SELL 5.76 @ 0.999 [Up] XRP Up or Down - July 12, 2:45AM-3:00AM ET
+2026-07-12 07:01:22,927 INFO polycopycat.engine.engine: 跳过: 计划量 0.24 份低于市场最小下单量 5.00（计划金额 $0.17） —— 0xeebd…ba30 BUY 5.00 @ 0.670 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:23,142 INFO polycopycat.engine.engine: 跳过: 计划量 0.30 份低于市场最小下单量 5.00（计划金额 $0.12） —— 0xe907…cff6 BUY 6.48 @ 0.380 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:01:23,232 INFO polycopycat.engine.engine: 跳过: 计划量 0.29 份低于市场最小下单量 5.00（计划金额 $0.21） —— 0xeebd…ba30 BUY 6.00 @ 0.700 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:23,918 INFO polycopycat.engine.engine: 跳过: 计划量 0.37 份低于市场最小下单量 5.00（计划金额 $0.15） —— 0xe907…cff6 BUY 7.98 @ 0.380 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:01:23,929 INFO polycopycat.engine.engine: 跳过: 计划量 0.30 份低于市场最小下单量 5.00（计划金额 $0.19） —— 0xe907…cff6 BUY 6.23 @ 0.610 [Bilibili Gaming] LoL: Bilibili Gaming vs Hanwha Life Esports (BO5) - Mid-Season Invitational Playoffs
+2026-07-12 07:01:24,099 INFO polycopycat.engine.engine: 跳过: 计划量 0.29 份低于市场最小下单量 5.00（计划金额 $0.21） —— 0xeebd…ba30 BUY 6.00 @ 0.700 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:24,137 INFO polycopycat.engine.engine: 跳过: 计划量 0.38 份低于市场最小下单量 5.00（计划金额 $0.15） —— 0xe907…cff6 BUY 8.06 @ 0.380 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:01:25,605 INFO polycopycat.engine.engine: 跳过: 计划量 1.01 份低于市场最小下单量 5.00（计划金额 $0.65） —— 0xeebd…ba30 BUY 21.00 @ 0.620 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:01:25,641 INFO polycopycat.engine.engine: 跳过: 计划量 0.99 份低于市场最小下单量 5.00（计划金额 $0.40） —— 0xe907…cff6 BUY 21.00 @ 0.380 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:01:25,689 INFO polycopycat.engine.engine: 跳过: 计划量 2.44 份低于市场最小下单量 5.00（计划金额 $1.79） —— 0xeebd…ba30 BUY 50.00 @ 0.715 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:25,792 INFO polycopycat.engine.engine: 跳过: 计划量 0.29 份低于市场最小下单量 5.00（计划金额 $0.22） —— 0xeebd…ba30 BUY 6.00 @ 0.720 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:25,880 INFO polycopycat.engine.engine: 跳过: 计划量 0.28 份低于市场最小下单量 5.00（计划金额 $0.11） —— 0xe907…cff6 BUY 6.00 @ 0.380 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:01:27,336 INFO polycopycat.engine.engine: 跳过: 计划量 0.63 份低于市场最小下单量 5.00（计划金额 $0.47） —— 0xe907…cff6 BUY 12.97 @ 0.720 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:30,285 INFO polycopycat.engine.notify: [通知] 📝 纸面 BUY 31.74 份 @≤0.630 [Bilibili Gaming] LoL: Bilibili Gaming vs Hanwha Life Esports (BO5) - Mid-Season Invitational Playoffs → 成交 31.74 @ 0.610（$19.36，滑点 +0.000） 跟随 0xe907…cff6
+2026-07-12 07:01:33,699 INFO polycopycat.engine.engine: 跳过: 计划量 0.75 份低于市场最小下单量 5.00（计划金额 $0.30） —— 0xe907…cff6 BUY 15.87 @ 0.380 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:01:33,991 INFO polycopycat.engine.engine: 跳过: 计划量 1.01 份低于市场最小下单量 5.00（计划金额 $0.65） —— 0xeebd…ba30 BUY 21.00 @ 0.620 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:01:36,491 INFO polycopycat.engine.engine: 跳过: 计划量 0.34 份低于市场最小下单量 5.00（计划金额 $0.27） —— 0xeebd…ba30 BUY 7.00 @ 0.770 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:36,567 INFO polycopycat.engine.engine: 跳过: 计划量 0.24 份低于市场最小下单量 5.00（计划金额 $0.20） —— 0xeebd…ba30 BUY 5.00 @ 0.780 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:36,761 INFO polycopycat.engine.notify: [通知] 📝 纸面 BUY 11.68 份 @≤0.240 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET → 成交 11.68 @ 0.230（$2.69，滑点 +0.009） 跟随 0xe907…cff6
+2026-07-12 07:01:36,762 INFO polycopycat.engine.engine: 跳过: 计划量 0.09 份低于市场最小下单量 5.00（计划金额 $0.08） —— 0xeebd…ba30 BUY 2.00 @ 0.780 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:39,346 INFO polycopycat.engine.engine: 跳过: 自己没有该市场持仓，忽略卖出信号 —— 0xe907…cff6 SELL 9.34 @ 0.999 [Down] Bitcoin Up or Down - July 12, 2:55AM-3:00AM ET
+2026-07-12 07:01:41,122 INFO polycopycat.engine.engine: 跳过: 计划量 0.75 份低于市场最小下单量 5.00（计划金额 $0.48） —— 0xe907…cff6 BUY 15.35 @ 0.620 [Yes] Will Bilibili Gaming win MSI 2026?
+2026-07-12 07:01:41,856 INFO polycopycat.engine.engine: 跳过: 计划量 3.40 份低于市场最小下单量 5.00（计划金额 $1.43） —— 0xe907…cff6 BUY 71.42 @ 0.400 [Hanwha Life Esports] LoL: Bilibili Gaming vs Hanwha Life Esports (BO5) - Mid-Season Invitational Playoffs
+2026-07-12 07:01:43,931 INFO polycopycat.engine.engine: 跳过: 计划量 0.28 份低于市场最小下单量 5.00（计划金额 $0.10） —— 0xeebd…ba30 BUY 6.00 @ 0.330 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:43,951 INFO polycopycat.engine.engine: 跳过: 计划量 0.28 份低于市场最小下单量 5.00（计划金额 $0.10） —— 0xeebd…ba30 BUY 6.00 @ 0.330 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:48,149 INFO polycopycat.engine.engine: 跳过: 计划量 2.09 份低于市场最小下单量 5.00（计划金额 $0.75） —— 0xeebd…ba30 BUY 44.00 @ 0.343 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:48,444 INFO polycopycat.engine.engine: 跳过: 计划量 3.43 份低于市场最小下单量 5.00（计划金额 $2.48） —— 0xe907…cff6 BUY 69.75 @ 0.710 [Yes] Will Hammarby IF win on 2026-07-12?
+2026-07-12 07:01:49,836 INFO polycopycat.engine.engine: 跳过: 计划量 0.23 份低于市场最小下单量 5.00（计划金额 $0.10） —— 0xeebd…ba30 BUY 5.00 @ 0.380 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:49,987 INFO polycopycat.engine.engine: 跳过: 计划量 1.46 份低于市场最小下单量 5.00（计划金额 $0.93） —— 0xe907…cff6 BUY 29.67 @ 0.630 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:50,123 INFO polycopycat.engine.engine: 跳过: 计划量 1.47 份低于市场最小下单量 5.00（计划金额 $1.09） —— 0xe907…cff6 BUY 30.19 @ 0.725 [Yes] Will the highest temperature in Beijing be 29°C on July 12?
+2026-07-12 07:01:50,124 INFO polycopycat.engine.engine: 跳过: 计划量 0.23 份低于市场最小下单量 5.00（计划金额 $0.10） —— 0xeebd…ba30 BUY 5.00 @ 0.380 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:51,609 INFO polycopycat.engine.engine: 跳过: 计划量 1.13 份低于市场最小下单量 5.00（计划金额 $0.48） —— 0xe907…cff6 BUY 23.80 @ 0.400 [Hanwha Life Esports] LoL: Bilibili Gaming vs Hanwha Life Esports (BO5) - Mid-Season Invitational Playoffs
+2026-07-12 07:01:51,633 INFO polycopycat.engine.engine: 跳过: 计划量 0.72 份低于市场最小下单量 5.00（计划金额 $0.47） —— 0xe907…cff6 BUY 14.83 @ 0.630 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:54,535 INFO polycopycat.engine.engine: 跳过: 计划量 1.94 份低于市场最小下单量 5.00（计划金额 $0.78） —— 0xeebd…ba30 BUY 41.00 @ 0.380 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:54,541 INFO polycopycat.engine.engine: 跳过: 计划量 0.95 份低于市场最小下单量 5.00（计划金额 $0.44） —— 0xeebd…ba30 BUY 20.00 @ 0.440 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:01:55,258 INFO polycopycat.engine.engine: 跳过: 计划量 0.23 份低于市场最小下单量 5.00（计划金额 $0.10） —— 0xeebd…ba30 BUY 5.00 @ 0.410 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:01:57,049 INFO polycopycat.engine.engine: 跳过: 计划量 0.23 份低于市场最小下单量 5.00（计划金额 $0.11） —— 0xeebd…ba30 BUY 5.00 @ 0.420 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:00,355 INFO polycopycat.engine.engine: 跳过: 计划量 0.17 份低于市场最小下单量 5.00（计划金额 $0.08） —— 0x1386…373a BUY 3.75 @ 0.400 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:01,365 INFO polycopycat.engine.engine: 跳过: 计划量 0.19 份低于市场最小下单量 5.00（计划金额 $0.07） —— 0x1386…373a BUY 4.05 @ 0.370 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:01,761 INFO polycopycat.engine.engine: 跳过: 计划量 4.61 份低于市场最小下单量 5.00（计划金额 $2.90） —— 0xe907…cff6 BUY 95.23 @ 0.610 [Bilibili Gaming] LoL: Bilibili Gaming vs Hanwha Life Esports (BO5) - Mid-Season Invitational Playoffs
+2026-07-12 07:02:02,133 INFO polycopycat.engine.engine: 跳过: 计划量 0.22 份低于市场最小下单量 5.00（计划金额 $0.07） —— 0x1386…373a BUY 4.55 @ 0.330 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:02,598 INFO polycopycat.engine.notify: [通知] 📝 纸面 BUY 42.20 份 @≤0.440 [Yes] Will France win on 2026-07-14? → 成交 42.20 @ 0.430（$18.15，滑点 +0.000） 跟随 0xe907…cff6
+2026-07-12 07:02:03,522 INFO polycopycat.engine.engine: 跳过: 计划量 2.85 份低于市场最小下单量 5.00（计划金额 $2.17） —— 0xeebd…ba30 BUY 58.00 @ 0.749 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:03,981 INFO polycopycat.engine.engine: 跳过: 计划量 0.25 份低于市场最小下单量 5.00（计划金额 $0.08） —— 0x1386…373a BUY 5.20 @ 0.288 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:05,396 INFO polycopycat.engine.engine: 跳过: 计划量 0.34 份低于市场最小下单量 5.00（计划金额 $0.27） —— 0xeebd…ba30 BUY 7.00 @ 0.780 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:05,461 INFO polycopycat.engine.engine: 跳过: 计划量 0.08 份低于市场最小下单量 5.00（计划金额 $0.07） —— 0xeebd…ba30 BUY 1.82 @ 0.790 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:05,710 INFO polycopycat.engine.engine: 跳过: 计划量 0.27 份低于市场最小下单量 5.00（计划金额 $0.08） —— 0x1386…373a BUY 6.00 @ 0.250 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:05,971 INFO polycopycat.engine.engine: 跳过: 计划量 0.24 份低于市场最小下单量 5.00（计划金额 $0.20） —— 0xeebd…ba30 BUY 5.00 @ 0.790 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:06,004 INFO polycopycat.engine.engine: 过滤: 目标成交金额 $0.93 低于阈值 $1.00 —— 0xeebd…ba30 BUY 1.18 @ 0.790 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:07,707 INFO polycopycat.engine.engine: 跳过: 计划量 2.83 份低于市场最小下单量 5.00（计划金额 $0.60） —— 0xeebd…ba30 BUY 62.00 @ 0.192 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:08,041 INFO polycopycat.engine.engine: 跳过: 计划量 0.37 份低于市场最小下单量 5.00（计划金额 $0.07） —— 0x1386…373a BUY 7.89 @ 0.190 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:08,063 INFO polycopycat.engine.engine: 跳过: 计划量 0.96 份低于市场最小下单量 5.00（计划金额 $0.49） —— 0xeebd…ba30 BUY 20.00 @ 0.490 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:02:08,230 INFO polycopycat.engine.engine: 跳过: 计划量 0.34 份低于市场最小下单量 5.00（计划金额 $0.07） —— 0x1386…373a BUY 7.14 @ 0.210 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:08,272 INFO polycopycat.engine.engine: 跳过: 计划量 0.36 份低于市场最小下单量 5.00（计划金额 $0.08） —— 0xeebd…ba30 BUY 8.00 @ 0.200 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:08,318 INFO polycopycat.engine.engine: 跳过: 计划量 0.31 份低于市场最小下单量 5.00（计划金额 $0.07） —— 0xeebd…ba30 BUY 7.00 @ 0.190 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:09,750 INFO polycopycat.engine.notify: [通知] 📝 纸面 SELL 5.81 份 @≤0.840 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET → 成交 5.81 @ 0.860（$5.00，滑点 -0.010）（跟随卖出 50%） 跟随 0xe907…cff6
+2026-07-12 07:02:10,496 INFO polycopycat.engine.engine: 跳过: 计划量 0.59 份低于市场最小下单量 5.00（计划金额 $0.53） —— 0xeebd…ba30 BUY 12.00 @ 0.878 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:10,539 INFO polycopycat.engine.engine: 跳过: 计划量 0.40 份低于市场最小下单量 5.00（计划金额 $0.37） —— 0xeebd…ba30 BUY 8.33 @ 0.880 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:12,455 INFO polycopycat.engine.engine: 跳过: 计划量 4.23 份低于市场最小下单量 5.00（计划金额 $3.81） —— 0xeebd…ba30 BUY 86.66 @ 0.880 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:16,985 INFO polycopycat.engine.engine: 跳过: 计划量 1.55 份低于市场最小下单量 5.00（计划金额 $0.23） —— 0xe907…cff6 BUY 33.36 @ 0.140 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:18,582 INFO polycopycat.engine.engine: 跳过: 计划量 3.59 份低于市场最小下单量 5.00（计划金额 $0.54） —— 0xeebd…ba30 BUY 83.00 @ 0.130 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:18,811 INFO polycopycat.engine.engine: 跳过: 计划量 0.43 份低于市场最小下单量 5.00（计划金额 $0.07） —— 0xeebd…ba30 BUY 10.00 @ 0.130 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:19,745 INFO polycopycat.engine.engine: 跳过: 计划量 0.54 份低于市场最小下单量 5.00（计划金额 $0.49） —— 0xeebd…ba30 BUY 11.06 @ 0.890 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:19,844 INFO polycopycat.engine.engine: 跳过: 计划量 0.44 份低于市场最小下单量 5.00（计划金额 $0.40） —— 0xeebd…ba30 BUY 9.09 @ 0.890 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:19,845 INFO polycopycat.engine.engine: 跳过: 计划量 0.96 份低于市场最小下单量 5.00（计划金额 $0.55） —— 0xeebd…ba30 BUY 20.00 @ 0.550 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:02:19,862 INFO polycopycat.engine.engine: 跳过: 计划量 2.22 份低于市场最小下单量 5.00（计划金额 $2.02） —— 0xeebd…ba30 BUY 45.45 @ 0.890 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:19,916 INFO polycopycat.engine.engine: 跳过: 计划量 0.68 份低于市场最小下单量 5.00（计划金额 $0.62） —— 0xeebd…ba30 BUY 14.00 @ 0.880 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:19,920 INFO polycopycat.engine.engine: 跳过: 计划量 0.44 份低于市场最小下单量 5.00（计划金额 $0.40） —— 0xeebd…ba30 BUY 9.09 @ 0.890 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:19,933 INFO polycopycat.engine.engine: 跳过: 计划量 1.33 份低于市场最小下单量 5.00（计划金额 $1.21） —— 0xeebd…ba30 BUY 27.27 @ 0.890 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:22,361 INFO polycopycat.engine.engine: 跳过: 计划量 0.83 份低于市场最小下单量 5.00（计划金额 $0.76） —— 0xeebd…ba30 BUY 17.00 @ 0.898 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:24,156 INFO polycopycat.engine.notify: [通知] 📝 纸面 BUY 6.65 份 @≤0.930 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET → 成交 6.65 @ 0.910（$6.05，滑点 +0.000） 跟随 0xeebd…ba30
+2026-07-12 07:02:24,344 INFO polycopycat.engine.engine: 跳过: 计划量 0.90 份低于市场最小下单量 5.00（计划金额 $0.19） —— 0xe907…cff6 BUY 19.79 @ 0.192 [Yes] Will Argentina win the 2026 FIFA World Cup?
+2026-07-12 07:02:24,346 INFO polycopycat.engine.engine: 跳过: 计划量 1.07 份低于市场最小下单量 5.00（计划金额 $1.00） —— 0xeebd…ba30 BUY 22.00 @ 0.910 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:30,207 INFO polycopycat.engine.engine: 跳过: 计划卖出 1.15 份低于市场最小下单量 5.00（持仓 12.52） —— 0xe907…cff6 SELL 31.13 @ 0.900 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:31,505 INFO polycopycat.engine.engine: 跳过: 自己没有该市场持仓，忽略卖出信号 —— 0xe907…cff6 SELL 107.77 @ 0.999 [No] Will the highest temperature in Hong Kong be 33°C on July 12?
+2026-07-12 07:02:33,245 INFO polycopycat.engine.engine: 跳过: 计划量 0.34 份低于市场最小下单量 5.00（计划金额 $0.23） —— 0xe907…cff6 BUY 6.97 @ 0.670 [Up] Dogecoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:33,246 INFO polycopycat.engine.engine: 跳过: 计划量 0.32 份低于市场最小下单量 5.00（计划金额 $0.19） —— 0xe907…cff6 BUY 6.66 @ 0.560 [Up] Bitcoin Up or Down - July 12, 3AM ET
+2026-07-12 07:02:36,171 INFO polycopycat.engine.engine: 跳过: 计划量 2.11 份低于市场最小下单量 5.00（计划金额 $1.65） —— 0xe907…cff6 BUY 42.87 @ 0.770 [TYLOO] Counter-Strike: TYLOO vs Lynn Vision (BO3) - BLAST Open Asian Qualifier Playoffs
+2026-07-12 07:02:36,214 INFO polycopycat.engine.engine: 跳过: 计划量 2.65 份低于市场最小下单量 5.00（计划金额 $0.61） —— 0xeebd…ba30 BUY 58.00 @ 0.210 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:36,371 INFO polycopycat.engine.engine: 跳过: 计划量 0.31 份低于市场最小下单量 5.00（计划金额 $0.07） —— 0xeebd…ba30 BUY 7.00 @ 0.210 [Down] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:37,569 INFO polycopycat.engine.engine: 跳过: 计划量 0.96 份低于市场最小下单量 5.00（计划金额 $0.53） —— 0xeebd…ba30 BUY 20.00 @ 0.532 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:15AM ET
+2026-07-12 07:02:37,952 INFO polycopycat.engine.engine: 跳过: 计划量 0.63 份低于市场最小下单量 5.00（计划金额 $0.56） —— 0xeebd…ba30 BUY 13.00 @ 0.860 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:42,110 INFO polycopycat.engine.engine: 跳过: 计划量 0.43 份低于市场最小下单量 5.00（计划金额 $0.37） —— 0xeebd…ba30 BUY 9.00 @ 0.830 [Up] Bitcoin Up or Down - July 12, 3:00AM-3:05AM ET
+2026-07-12 07:02:44,077 INFO polycopycat.engine.engine: 跳过: 计划量 2.16 份低于市场最小下单量 5.00（计划金额 $0.95） —— 0xe907…cff6 BUY 44.28 @ 0.430 [Yes] Will France win on 2026-07-14?
+正在停止跟单引擎……
+已停止。

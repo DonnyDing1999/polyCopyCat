@@ -1,0 +1,3 @@
+usage: polycopycat [-h] [--version] [-v]
+                   {trades,watch,scout,arb-scan,run,report} ...
+polycopycat: error: unrecognized arguments: -v
