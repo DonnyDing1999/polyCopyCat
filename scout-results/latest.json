@@ -1,0 +1,1 @@
+{"address": "0xce25e214d5cfe4f459cf67f08df581885aae7fdc", "eligible": false, "score": 0.0, "reasons": ["频率过高疑似机器人（500 笔/天 > 150）"], "realized_pnl": 0.0, "win_rate": null, "matched_sells": 0, "n_trades": 1000, "n_markets": 98, "avg_trade_usdc": 8.85, "quick_flip_ratio": 0.0, "median_holding_s": 0.0, "last_ts": 1783836139, "exposure_usdc": 230.5, "unrealized_pnl": 15.33}
