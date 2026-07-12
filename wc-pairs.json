@@ -1,7 +1,0 @@
-{
-  "_comment": "2026 世界杯洲际夺冠配对（决赛 7/20 结算，持有期约一周）。语义等价度高但结算条款未人工核对——下单前必须读完两边规则文本。",
-  "pairs": [
-    {"poly_condition_id": "0x0ed2e5e985631ab71750ad21a40503508a5f7d928032b2d1f8c901013f4e002f", "kalshi_ticker": "KXWCCONTINENT-26-SA", "note": "南美(CONMEBOL)夺冠（待人工确认）"},
-    {"poly_condition_id": "0x3561a95d16ac2edfd3831aba4612c88c6f5b84a6f0924bdb6b07dc7cfe73e121", "kalshi_ticker": "KXWCCONTINENT-26-EUR", "note": "欧洲(UEFA)夺冠（待人工确认）"}
-  ]
-}

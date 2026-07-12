@@ -1,1 +1,0 @@
---pairs wc-pairs.json --min-edge 0.003 --min-profit 0.05

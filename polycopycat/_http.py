@@ -59,19 +59,3 @@ def get_json(
         lambda: session.get(url, params=params, timeout=timeout),
         url, max_retries=max_retries, backoff=backoff,
     )
-
-
-def post_json(
-    session: requests.Session,
-    url: str,
-    *,
-    json_body: Any = None,
-    timeout: float = 10.0,
-    max_retries: int = 3,
-    backoff: float = 1.0,
-) -> Any:
-    """POST JSON 并解析响应；重试语义同 get_json。"""
-    return _send_with_retries(
-        lambda: session.post(url, json=json_body, timeout=timeout),
-        url, max_retries=max_retries, backoff=backoff,
-    )

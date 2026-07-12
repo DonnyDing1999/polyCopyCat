@@ -1,6 +1,0 @@
-对 2 条已确认配对算价差（Kalshi 手续费已计入）……
-已确认配对中当前没有达到阈值的跨所价差
-
-—— 各配对当前最优组合（负边际 = 无套利，差多少一目了然）——
-  边际 -0.011（两腿成本 1.011，Poly 0.800 + Kalshi 0.200 + 费 0.011，深度 502）  Will Europe (UEFA) win the 2026 FIFA World Cup? ↔ KXWCCONTINENT-26-EUR
-  边际 -0.021（两腿成本 1.021，Poly 0.200 + Kalshi 0.810 + 费 0.011，深度 912）  Will South America (CONMEBOL) win the 2026 FIFA World Cup? ↔ KXWCCONTINENT-26-SA

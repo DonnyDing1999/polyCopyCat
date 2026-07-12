@@ -17,7 +17,7 @@ from typing import Any
 
 import requests
 
-from .._http import HttpError, get_json, post_json
+from .._http import HttpError, get_json
 
 logger = logging.getLogger(__name__)
 
@@ -135,36 +135,6 @@ class ClobReadClient:
         if not isinstance(data, dict):
             raise ClobError(f"预期 /book 返回对象，实际是: {data!r:.200}")
         return OrderBook.from_api(data)
-
-    def get_books(self, token_ids: list[str]) -> dict[str, OrderBook]:
-        """批量拉订单簿（POST /books），失败时逐个降级；返回 token_id -> 订单簿。"""
-        out: dict[str, OrderBook] = {}
-        chunk_size = 50
-        for start in range(0, len(token_ids), chunk_size):
-            chunk = token_ids[start:start + chunk_size]
-            try:
-                data = post_json(
-                    self._session, f"{self.base_url}/books",
-                    json_body=[{"token_id": token} for token in chunk],
-                    timeout=self.timeout, max_retries=self.max_retries,
-                    backoff=self.backoff,
-                )
-                if not isinstance(data, list):
-                    raise ClobError(f"预期 /books 返回列表，实际是: {data!r:.120}")
-                for item in data:
-                    if not isinstance(item, dict):
-                        continue
-                    key = str(item.get("asset_id") or item.get("token_id") or "")
-                    if key:
-                        out[key] = OrderBook.from_api(item)
-            except HttpError as exc:
-                logger.debug("批量订单簿失败（%s），该批逐个降级", exc)
-                for token in chunk:
-                    try:
-                        out[token] = self.get_book(token)
-                    except ClobError as one_exc:
-                        logger.debug("拉取 %s 订单簿失败: %s", token, one_exc)
-        return out
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         try:
