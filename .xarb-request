@@ -1,1 +1,1 @@
---suggest --query france spain cup mbappe world fifa --top 40 --min-score 0.35 --max-kalshi 20000 --event-probe 150
+--pairs wc-pairs.json --min-edge 0.003 --min-profit 0.05
