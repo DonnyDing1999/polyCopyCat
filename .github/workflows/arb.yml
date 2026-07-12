@@ -1,0 +1,54 @@
+name: arb-scan
+
+# 触发：推送修改 .arb-request（内容原样传给 polycopycat arb-scan），
+# 或在 Actions 页手动 Run workflow 填参数
+on:
+  push:
+    paths:
+      - ".arb-request"
+  workflow_dispatch:
+    inputs:
+      args:
+        description: "arb-scan 参数（如 --max-markets 500 --min-profit 0.5）"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency: arb-scan
+
+jobs:
+  arb-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装
+        run: pip install -e .
+
+      - name: 运行 arb-scan
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            REQUEST="${{ github.event.inputs.args }}"
+          else
+            REQUEST="$(tr '\n' ' ' < .arb-request)"
+          fi
+          echo "arb-scan 参数: $REQUEST"
+          mkdir -p arb-results
+          polycopycat arb-scan $REQUEST --json > arb-results/latest.json || true
+          polycopycat arb-scan $REQUEST > arb-results/latest.txt 2>&1 || true
+          tail -20 arb-results/latest.txt
+
+      - name: 提交结果
+        run: |
+          git config user.name "arb-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add arb-results
+          git commit -m "arb-scan 结果 [skip ci]" || echo "结果无变化"
+          git push
