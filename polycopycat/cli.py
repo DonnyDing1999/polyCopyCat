@@ -229,6 +229,67 @@ def cmd_arb_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_xarb_scan(args: argparse.Namespace) -> int:
+    from ._http import HttpError
+    from .engine.clob import ClobReadClient
+    from .kalshi import KalshiClient
+    from .xarb import PairsError, XarbScanner, load_pairs
+
+    clob = ClobReadClient(base_url=args.clob_url)
+    kalshi = KalshiClient(base_url=args.kalshi_url)
+    scanner = XarbScanner(clob, kalshi, gamma_url=args.gamma_url)
+    suggest_mode = args.suggest or not args.pairs
+    try:
+        if args.pairs:
+            pairs = load_pairs(args.pairs)
+            print(f"对 {len(pairs)} 条已确认配对算价差（Kalshi 手续费已计入）……", file=sys.stderr)
+            opportunities = scanner.scan_pairs(
+                pairs, min_edge=args.min_edge, min_profit=args.min_profit
+            )
+            if args.json:
+                for opp in opportunities:
+                    print(json.dumps(opp.to_dict(), ensure_ascii=False), flush=True)
+            else:
+                if not opportunities:
+                    print("已确认配对中当前没有达到阈值的跨所价差")
+                for i, opp in enumerate(opportunities, 1):
+                    print(
+                        f"{i:>3}. {opp.combo}  边际 ${opp.edge_per_pair:.3f}/对 × "
+                        f"{opp.max_pairs:,.0f} ≈ ${opp.profit_usdc:,.2f}  "
+                        f"Poly {opp.poly_price:.3f} + Kalshi {opp.kalshi_price:.3f} "
+                        f"(费 {opp.kalshi_fee:.3f})  {opp.poly_question} ↔ {opp.kalshi_ticker}"
+                    )
+        if suggest_mode:
+            if not args.pairs:
+                print("未指定 --pairs，进入候选配对建议模式", file=sys.stderr)
+            suggestions = scanner.suggest_pairs(
+                max_poly=args.max_markets, min_score=args.min_score, top=args.top
+            )
+            if args.json:
+                for s in suggestions:
+                    print(json.dumps(s, ensure_ascii=False), flush=True)
+            else:
+                if not suggestions:
+                    print("没有相似度达标的候选配对")
+                for i, s in enumerate(suggestions, 1):
+                    gap = (
+                        f"截止差 {s['close_gap_days']} 天"
+                        if s["close_gap_days"] is not None else "截止差未知"
+                    )
+                    print(f"{i:>3}. 相似度 {s['score']:.2f}（{gap}）")
+                    print(f"     Poly:   {s['poly_question']}  [{s['poly_condition_id']}]")
+                    print(f"     Kalshi: {s['kalshi_title']}  [{s['kalshi_ticker']}]")
+            print(
+                "\n⚠️ 候选只是文本相似：两边结算条款（数据源/截止时间/措辞）必须人工"
+                "核对等价后，才能写进配对文件用于价差扫描——配错对不是套利，是双边敞口。",
+                file=sys.stderr,
+            )
+    except (HttpError, PairsError) as exc:
+        print(f"跨所扫描失败：{exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from .engine.clob import ClobReadClient
     from .engine.config import ConfigError, load_config
@@ -484,6 +545,32 @@ def build_parser() -> argparse.ArgumentParser:
     p_arb.add_argument("--clob-url", default=None,
                        help="CLOB 地址（默认官方，环境变量 POLYCOPYCAT_CLOB_URL）")
     p_arb.set_defaults(func=cmd_arb_scan)
+
+    p_xarb = sub.add_parser(
+        "xarb-scan", parents=[common],
+        help="Kalshi × Polymarket 跨所套利：提名候选配对 / 对已确认配对算价差（只读）",
+    )
+    p_xarb.add_argument("--pairs", default=None,
+                        help="人工确认过的配对文件（见 xarb-pairs.example.json）；不给则进入建议模式")
+    p_xarb.add_argument("--suggest", action="store_true",
+                        help="输出候选配对建议（可与 --pairs 同时用）")
+    p_xarb.add_argument("--max-markets", type=int, default=300,
+                        help="建议模式下 Polymarket 候选池大小（默认 300）")
+    p_xarb.add_argument("--min-score", type=float, default=0.5,
+                        help="建议模式的标题相似度阈值 0~1（默认 0.5）")
+    p_xarb.add_argument("--top", type=int, default=20, help="建议条数上限（默认 20）")
+    p_xarb.add_argument("--min-edge", type=float, default=0.01,
+                        help="配对扫描：每对最小已扣费边际（默认 0.01）")
+    p_xarb.add_argument("--min-profit", type=float, default=1.0,
+                        help="配对扫描：顶档深度下最小可锁定利润 USDC（默认 1）")
+    p_xarb.add_argument("--kalshi-url", default=None,
+                        help="Kalshi 接口（默认 api.elections.kalshi.com/trade-api/v2，"
+                             "环境变量 POLYCOPYCAT_KALSHI_URL）")
+    p_xarb.add_argument("--gamma-url", default=None,
+                        help="Gamma 市场目录（环境变量 POLYCOPYCAT_GAMMA_URL）")
+    p_xarb.add_argument("--clob-url", default=None,
+                        help="CLOB 地址（环境变量 POLYCOPYCAT_CLOB_URL）")
+    p_xarb.set_defaults(func=cmd_xarb_scan)
 
     p_run = sub.add_parser(
         "run", parents=[common],

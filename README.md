@@ -46,6 +46,7 @@ polycopycat report --config copycat.json
 | `watch <地址...>` | 持续监控多个地址的新成交（轮询或 `--stream` 实时） |
 | `scout [地址...]` | 寻找值得跟单的地址：回放战绩、排除做市/亏损地址 |
 | `arb-scan` | 扫描互补对套利机会（只读研究工具，不下单） |
+| `xarb-scan` | Kalshi × Polymarket 跨所套利：提名配对 / 算价差（只读） |
 | `run --config <文件>` | 启动跟单引擎（纸面/实盘由配置决定） |
 | `report` | 查看账本：信号统计、持仓、盈亏、最近订单 |
 
@@ -101,6 +102,17 @@ polycopycat arb-scan --max-markets 500 --min-edge 0.005 --min-profit 0.5
 诚实定位：这是速度游戏，肉眼可见的价差通常几百毫秒内被专业机器人吃掉；本工具只读不下单，用于研究"值不值得做执行版"，不承诺你能抢到。
 
 **实测结论（2026-07，CI 真实扫描）**：前 100 与前 1000 活跃市场两轮扫描、利润门槛压到 $0.1，机会数均为 **0**——互补对套利在人肉时间尺度上已被专业机器人吃尽，执行版没有价值。本工具保留用作市场效率探针。
+
+### xarb-scan —— Kalshi × Polymarket 跨所套利（只读）
+
+同一个现实事件在两个所都有市场时，「Poly 买 Yes + Kalshi 买 No」构成完全对冲，两腿成本（含 Kalshi 手续费 `0.07×P×(1−P)`）之和 < $1 即锁定利润。跨所价差因开户/KYC/资金分踞的摩擦**无法被机器人瞬间抹平**，比站内套利更可能存在。
+
+```bash
+polycopycat xarb-scan --suggest                 # 自动提名两所相似市场（只提名不采信）
+polycopycat xarb-scan --pairs xarb-pairs.json   # 对人工确认过的配对算精确价差
+```
+
+**核心风险不是价格是配对**：两边"看起来一样"的市场，结算条款可能有细微差异（数据源/截止时间/措辞），配错对不是套利而是双边敞口，可能两腿全亏。所以自动匹配只输出候选（标题相似度 + 数字 token 严格一致 + 截止时间接近），**必须人工核对两边结算规则文本**后写进配对文件（格式见 `xarb-pairs.example.json`）才参与价差计算。执行侧还有单腿风险、两所资金划转与各自的合规要求（Kalshi/Polymarket 的地区与 KYC 规则），自担。
 
 ### run / report —— 跟单引擎
 
@@ -168,6 +180,7 @@ polycopycat report --config copycat.json         # 或 report --ledger data/copy
 | `POLYCOPYCAT_CLOB_URL` | 覆盖 CLOB 入口 |
 | `POLYCOPYCAT_LB_URL` | 覆盖排行榜入口 |
 | `POLYCOPYCAT_GAMMA_URL` | 覆盖 Gamma 市场目录入口（arb-scan 用） |
+| `POLYCOPYCAT_KALSHI_URL` | 覆盖 Kalshi 接口入口（xarb-scan 用） |
 | `POLYCOPYCAT_PRIVATE_KEY` | 实盘私钥（变量名可在 `live.private_key_env` 改；绝不落盘、绝不进日志） |
 | 自定义名 | Telegram bot token，变量名由 `notify.telegram_bot_token_env` 指定 |
 
@@ -180,6 +193,7 @@ polycopycat report --config copycat.json         # 或 report --ledger data/copy
 | CLOB | `clob.polymarket.com` | 市场元数据、订单簿（只读）；实盘下单（L1/L2 鉴权） | 官方 |
 | 排行榜 | `lb-api.polymarket.com` | scout 候选来源 | **非正式文档**，不可用时自动跳过 |
 | Gamma | `gamma-api.polymarket.com` | arb-scan 市场目录（活跃市场按成交量过滤） | 官方目录接口 |
+| Kalshi | `api.elections.kalshi.com/trade-api/v2` | xarb-scan 跨所行情（市场列表/订单簿，公开只读） | 官方，无需鉴权 |
 
 ## 时延：轮询 vs 实时推送
 
@@ -268,6 +282,8 @@ polycopycat/
 ├── stream.py         # 实时成交推送：订阅、保活、指数退避重连、on_gap
 ├── _http.py          # 带重试的 HTTP GET/POST（429/5xx 指数退避）
 ├── arb.py            # 互补对套利扫描器（Gamma 目录 + 批量订单簿，只读）
+├── kalshi.py         # Kalshi 只读客户端（市场列表/订单簿，美分→美元）
+├── xarb.py           # 跨所套利：候选配对提名 + 确认配对价差（含费）
 ├── engine/           # 跟单引擎
 │   ├── engine.py     #   主体：信号队列 → 过滤 → 计算 → 风控 → 执行 → 记账；对账线程
 │   ├── config.py     #   copycat.json 解析与校验
@@ -284,7 +300,7 @@ polycopycat/
 │   ├── metrics.py    #   成交带回放 → 战绩指标
 │   ├── score.py      #   排除规则 + 打分
 │   └── runner.py     #   候选来源（全站流/排行榜）与评估编排
-tests/                # 138 个单测，全部离线（HTTP/WS 均为注入的假实现）
+tests/                # 155 个单测，全部离线（HTTP/WS 均为注入的假实现）
 config.example.json   # 引擎配置示例
 .claude/skills/verify # 端到端验证手册：本地 mock 全套接口驱动真实 CLI
 .github/workflows/    # 三个真实接口 CI：scout / arb-scan / smoke
@@ -306,6 +322,7 @@ pytest                # 124 个单测，无网络依赖，<1s
 - `scout`：改 `.scout-request` 触发，内容透传给 `polycopycat scout`
 - `arb-scan`：改 `.arb-request` 触发，真实市场套利扫描
 - `smoke`：改 `.smoke-request` 触发，一次跑通 trades / `watch --stream`（RTDS 协议实测）/ CLOB 元数据与订单簿 / 纸面引擎全链路
+- `xarb-scan`：改 `.xarb-request` 触发，Kalshi × Polymarket 跨所扫描
 
 **真实环境验证状态（2026-07 冒烟 4/4 PASS）**：Data API（成交/持仓/全站流）、
 RTDS 实时推送（90 秒 16 条实时成交、240 秒零断线）、CLOB（元数据/订单簿/批量、
@@ -323,8 +340,9 @@ negRisk 市场）、Gamma 目录、排行榜均已实测通过；纸面引擎在
 - [x] 跟单引擎 M1：实盘 FAK 下单（py-clob-client）、Telegram 通知
 - [x] 跟单引擎 M2：卖出跟随（持仓镜像）、定期对账、可赎回提醒
 - [x] scout：候选地址发现与战绩回放评分（排除做市/亏损/低样本地址）
-- [x] arb-scan：互补对套利扫描（只读快照，买对冲/铸造两类机会）
-- [ ] 信号聚合（分批建仓合并跟单）、自动 redeem、多目标信号轧差、套利执行版
+- [x] arb-scan：互补对套利扫描（只读快照，买对冲/铸造两类机会；实测 0 机会）
+- [x] xarb-scan：Kalshi × Polymarket 跨所套利（候选配对提名 + 确认配对含费价差）
+- [ ] 信号聚合（分批建仓合并跟单）、自动 redeem、多目标信号轧差、跨所执行版
 
 ## 风险提示
 

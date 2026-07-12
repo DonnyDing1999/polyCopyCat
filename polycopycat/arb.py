@@ -145,6 +145,8 @@ class ArbScanner:
                     "question": str(raw.get("question", "")),
                     "neg_risk": bool(raw.get("negRisk", False)),
                     "tokens": tokens,
+                    "outcomes": [str(o) for o in _parse_json_list(raw.get("outcomes"))],
+                    "end_date": str(raw.get("endDate", "")),
                 })
             if fresh == 0:
                 break  # 服务端忽略 offset 或已到底，防止空转

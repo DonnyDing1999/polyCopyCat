@@ -1,0 +1,10 @@
+{
+  "pairs": [
+    {
+      "poly_condition_id": "0x此处填Polymarket市场的conditionId",
+      "kalshi_ticker": "KX此处填Kalshi市场ticker",
+      "poly_yes_index": 0,
+      "note": "必须人工核对两边结算条款等价（数据源/截止时间/措辞）后再填入"
+    }
+  ]
+}
