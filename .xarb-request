@@ -1,1 +1,1 @@
---suggest --max-markets 300 --max-kalshi 4000 --min-score 0.5 --top 25
+--pairs xarb-pairs.json --min-edge 0.005 --min-profit 0.1
