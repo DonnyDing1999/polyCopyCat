@@ -152,7 +152,13 @@ class KalshiClient:
         self.max_retries = max_retries
         self.backoff = backoff
 
-    def get_markets(self, *, status: str = "open", max_markets: int = 1000) -> list[KalshiMarket]:
+    def get_markets(
+        self,
+        *,
+        status: str = "open",
+        max_markets: int = 1000,
+        series_ticker: str | None = None,
+    ) -> list[KalshiMarket]:
         """分页拉市场列表（自带顶档报价，扫描用它就够了）。"""
         markets: list[KalshiMarket] = []
         cursor = ""
@@ -163,6 +169,8 @@ class KalshiClient:
                 "status": status,
                 "limit": min(_PAGE, max_markets - len(markets)),
             }
+            if series_ticker:
+                params["series_ticker"] = series_ticker
             if cursor:
                 params["cursor"] = cursor
             data = self._get("/markets", params)

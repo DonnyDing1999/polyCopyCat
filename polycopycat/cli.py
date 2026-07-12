@@ -267,6 +267,7 @@ def cmd_xarb_scan(args: argparse.Namespace) -> int:
             scored = scanner.suggest_pairs(
                 max_poly=args.max_markets, max_kalshi=args.max_kalshi,
                 min_score=0.15, top=max(args.top, 10),
+                kalshi_series=args.kalshi_series,
             )
             qualified = [s for s in scored if s["score"] >= args.min_score][: args.top]
             near_misses = [s for s in scored if s["score"] < args.min_score][:10]
@@ -276,7 +277,8 @@ def cmd_xarb_scan(args: argparse.Namespace) -> int:
                     f"截止差 {s['close_gap_days']} 天"
                     if s["close_gap_days"] is not None else "截止差未知"
                 )
-                print(f"{i:>3}. {mark}相似度 {s['score']:.2f}（{gap}）")
+                kind = "结构化" if s.get("match_type") == "structured" else "文本"
+                print(f"{i:>3}. {mark}{kind}匹配 {s['score']:.2f}（{gap}）")
                 print(f"     Poly:   {s['poly_question']}  [{s['poly_condition_id']}]")
                 print(f"     Kalshi: {s['kalshi_title']}  [{s['kalshi_ticker']}]")
 
@@ -571,6 +573,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="建议模式下 Polymarket 候选池大小（默认 300）")
     p_xarb.add_argument("--max-kalshi", type=int, default=2000,
                         help="建议模式下 Kalshi 候选池大小（默认 2000）")
+    p_xarb.add_argument("--kalshi-series", default=None,
+                        help="只在指定 Kalshi 系列内找配对（如 KXBTCD），縮小池子提高信噪比")
     p_xarb.add_argument("--min-score", type=float, default=0.5,
                         help="建议模式的标题相似度阈值 0~1（默认 0.5）")
     p_xarb.add_argument("--top", type=int, default=20, help="建议条数上限（默认 20）")

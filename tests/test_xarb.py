@@ -9,8 +9,11 @@ from polycopycat.xarb import (
     PairsError,
     XarbScanner,
     close_time_gap_days,
+    extract_features,
+    is_parlay,
     load_pairs,
     similarity,
+    structured_score,
 )
 
 
@@ -29,6 +32,42 @@ def test_close_time_gap():
     assert close_time_gap_days("2026-07-14T00:00:00Z", "2026-07-15T12:00:00Z") == 1.5
     assert close_time_gap_days("", "2026-07-15T12:00:00Z") is None
     assert close_time_gap_days("garbage", "2026-07-15T12:00:00Z") is None
+
+
+def test_extract_features_crypto_hourly():
+    f = extract_features("Bitcoin above 64,800 on July 12, 3AM ET?")
+    assert f.asset == "btc"
+    assert (f.month, f.day) == (7, 12)
+    assert f.hour == 3
+    assert f.thresholds == frozenset({"64800"})  # 年份/日期/钟点都不算阈值
+
+
+def test_extract_features_pm_hour_and_entities():
+    f = extract_features("Will Argentina win the 2026 FIFA World Cup by 9PM ET?")
+    assert f.hour == 21
+    assert f.asset == "" and f.thresholds == frozenset()
+    assert {"Argentina", "World", "Cup"} <= set(f.entities)
+
+
+def test_structured_score_matches_crypto_across_phrasings():
+    a = extract_features("Bitcoin Up or Down - July 12, 3AM ET")
+    b = extract_features("Bitcoin price today at 3am EDT (Jul 12)?")
+    assert structured_score(a, b) >= 0.5  # 资产+日期+小时对齐
+
+
+def test_structured_score_hard_conflicts_zero():
+    base = extract_features("Bitcoin above 64800 on July 12, 3AM ET")
+    assert structured_score(base, extract_features("Ethereum above 64800 July 12 3AM ET")) == 0
+    assert structured_score(base, extract_features("Bitcoin above 64800 July 13 3AM ET")) == 0
+    assert structured_score(base, extract_features("Bitcoin above 64800 July 12 4AM ET")) == 0
+    assert structured_score(base, extract_features("Bitcoin above 65000 July 12 3AM ET")) == 0
+
+
+def test_is_parlay_detects_multileg():
+    assert is_parlay("yes Cody Bellinger: 2+,yes Will Warren: 2+")
+    assert is_parlay("yes Pittsburgh,yes Baltimore,no Over 8.5 runs scored")
+    assert not is_parlay("Will Argentina win the 2026 FIFA World Cup?")
+    assert not is_parlay("Bitcoin price today at 3am EDT?")
 
 
 def test_load_pairs(tmp_path):
@@ -165,6 +204,27 @@ def test_suggest_pairs_matches_and_filters():
     s = suggestions[0]
     assert s["poly_condition_id"] == "0xc1" and s["kalshi_ticker"] == "KX-BTC"
     assert s["score"] >= 0.8 and s["close_gap_days"] == 0.5
+
+
+def test_suggest_pairs_structured_beats_weak_text():
+    poly_markets = [poly_market(cid="0xbtc", question="Bitcoin Up or Down - July 12, 3AM ET")]
+    kalshi = FakeKalshi(markets=[
+        kalshi_market(ticker="KX-BTC-H", title="Bitcoin price today at 3am EDT (Jul 12)?"),
+    ])
+    scanner = make_scanner(poly_markets, {}, kalshi)
+    suggestions = scanner.suggest_pairs(min_score=0.5, top=10)
+    assert len(suggestions) == 1
+    assert suggestions[0]["match_type"] == "structured"
+    assert suggestions[0]["kalshi_ticker"] == "KX-BTC-H"
+
+
+def test_suggest_pairs_filters_parlay_markets():
+    poly_markets = [poly_market(cid="0xc1", question="Will Cody Bellinger score 2+?")]
+    kalshi = FakeKalshi(markets=[
+        kalshi_market(ticker="KX-PARLAY", title="yes Cody Bellinger: 2+,yes Will Warren: 2+"),
+    ])
+    scanner = make_scanner(poly_markets, {}, kalshi)
+    assert scanner.suggest_pairs(min_score=0.2, top=10) == []
 
 
 def test_suggest_pairs_rejects_far_close_times():

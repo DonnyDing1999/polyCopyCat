@@ -300,7 +300,7 @@ polycopycat/
 │   ├── metrics.py    #   成交带回放 → 战绩指标
 │   ├── score.py      #   排除规则 + 打分
 │   └── runner.py     #   候选来源（全站流/排行榜）与评估编排
-tests/                # 155 个单测，全部离线（HTTP/WS 均为注入的假实现）
+tests/                # 162 个单测，全部离线（HTTP/WS 均为注入的假实现）
 config.example.json   # 引擎配置示例
 .claude/skills/verify # 端到端验证手册：本地 mock 全套接口驱动真实 CLI
 .github/workflows/    # 三个真实接口 CI：scout / arb-scan / smoke

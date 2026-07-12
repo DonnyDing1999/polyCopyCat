@@ -124,13 +124,12 @@ def _tokens(text: str) -> set[str]:
     return {w for w in words if w and w not in _STOPWORDS}
 
 
-def similarity(a: str, b: str) -> float:
-    """标题相似度：词集 Jaccard + 数字 token 严格一致性加权。
+def _score_token_sets(ta: set[str], tb: set[str]) -> float:
+    """词集 Jaccard + 数字 token 严格一致性加权。
 
     数字集合必须完全相等才加分，任何不一致都重罚——
     "above 64800" 和 "above 65000" 是两个不同的市场，配错就是敞口。
     """
-    ta, tb = _tokens(a), _tokens(b)
     if not ta or not tb:
         return 0.0
     jaccard = len(ta & tb) / len(ta | tb)
@@ -141,6 +140,118 @@ def similarity(a: str, b: str) -> float:
             return jaccard * 0.3
         jaccard = min(1.0, jaccard + 0.15)
     return jaccard
+
+
+def similarity(a: str, b: str) -> float:
+    """标题文本相似度（0~1）。"""
+    return _score_token_sets(_tokens(a), _tokens(b))
+
+
+# ---- 结构化特征匹配：文本措辞差异大时靠硬特征配对 ----
+
+_CRYPTO_ASSETS = {
+    "bitcoin": "btc", "btc": "btc",
+    "ethereum": "eth", "eth": "eth",
+    "solana": "sol", "sol": "sol",
+    "xrp": "xrp", "ripple": "xrp",
+    "dogecoin": "doge", "doge": "doge",
+}
+_MONTHS = {
+    "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
+    "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+    "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
+    "october": 10, "oct": 10, "november": 11, "nov": 11,
+    "december": 12, "dec": 12,
+}
+_ENTITY_SKIP = {
+    "Will", "Yes", "No", "The", "Up", "Down", "Or", "On", "In", "Be", "Above",
+    "Below", "Price", "Today", "Tomorrow", "What", "Who", "How", "Exact", "Score",
+} | {m.capitalize() for m in _MONTHS}
+
+
+@dataclass(frozen=True)
+class Features:
+    asset: str = ""                       # 归一化的加密资产名
+    month: int = 0
+    day: int = 0
+    hour: int = -1                        # 0~23，-1 表示未知
+    thresholds: frozenset = frozenset()   # 价格阈值数字（排除日期/年份/钟点）
+    entities: frozenset = frozenset()     # 专有名词（队名/人名/国家等）
+
+
+def extract_features(text: str) -> Features:
+    lower = text.lower().replace(",", "")
+    tokens = [t for t in re.split(r"[^a-z0-9$.]+", lower) if t]
+    asset = next((_CRYPTO_ASSETS[t] for t in tokens if t in _CRYPTO_ASSETS), "")
+
+    month = day = 0
+    for i, token in enumerate(tokens):
+        if token in _MONTHS:
+            month = _MONTHS[token]
+            for j in (i + 1, i - 1):  # "July 12" 或 "12 July"
+                if 0 <= j < len(tokens) and tokens[j].isdigit() and 1 <= int(tokens[j]) <= 31:
+                    day = int(tokens[j])
+                    break
+            break
+
+    hour = -1
+    clock = re.search(r"(\d{1,2})\s*(am|pm)", lower)
+    if clock:
+        hour = int(clock.group(1)) % 12 + (12 if clock.group(2) == "pm" else 0)
+
+    thresholds = set()
+    for token in tokens:
+        stripped = token.strip("$.")
+        if not stripped or not stripped.replace(".", "", 1).isdigit():
+            continue
+        value = float(stripped)
+        if 1900 <= value <= 2100:      # 年份
+            continue
+        if value == day and day:      # 日期里的"日"
+            continue
+        if clock and stripped == clock.group(1):  # 钟点
+            continue
+        if value >= 100 or "." in stripped:       # 价格阈值特征
+            thresholds.add(stripped)
+
+    entities = frozenset(
+        w for w in re.findall(r"\b[A-Z][a-z]{2,}\b", text) if w not in _ENTITY_SKIP
+    )
+    return Features(
+        asset=asset, month=month, day=day, hour=hour,
+        thresholds=frozenset(thresholds), entities=entities,
+    )
+
+
+def structured_score(fa: Features, fb: Features) -> float:
+    """结构化匹配分：任何硬特征冲突直接 0，其余按证据累加。"""
+    if fa.asset and fb.asset and fa.asset != fb.asset:
+        return 0.0
+    if fa.month and fb.month and (fa.month, fa.day) != (fb.month, fb.day):
+        return 0.0
+    if fa.hour >= 0 and fb.hour >= 0 and fa.hour != fb.hour:
+        return 0.0
+    if fa.thresholds and fb.thresholds and fa.thresholds != fb.thresholds:
+        return 0.0
+    score = 0.0
+    if fa.asset and fa.asset == fb.asset:
+        score += 0.45
+    if fa.month and fa.day and (fa.month, fa.day) == (fb.month, fb.day):
+        score += 0.25
+    if fa.hour >= 0 and fa.hour == fb.hour:
+        score += 0.15
+    if fa.thresholds and fa.thresholds == fb.thresholds:
+        score += 0.15
+    common_entities = fa.entities & fb.entities
+    if common_entities:
+        score += min(0.3, 0.15 * len(common_entities))
+    return min(1.0, score)
+
+
+def is_parlay(title: str) -> bool:
+    """Kalshi 自动生成的多腿串关市场（无法与单事件市场配对，直接滤掉）。"""
+    lower = title.lower()
+    return "," in lower and ("yes " in lower or "no " in lower)
 
 
 def _parse_iso(value: str) -> datetime | None:
@@ -178,41 +289,59 @@ class XarbScanner:
         self,
         *,
         max_poly: int = 300,
-        max_kalshi: int = 1000,
+        max_kalshi: int = 2000,
         min_score: float = 0.5,
         max_gap_days: float = 3.0,
         top: int = 20,
+        kalshi_series: str | None = None,
     ) -> list[dict[str, Any]]:
         poly_markets = [
             m for m in self._poly.discover_markets(limit=max_poly)
             if [o.lower() for o in m.get("outcomes", [])[:2]] == ["yes", "no"]
         ]
-        kalshi_markets = self._kalshi.get_markets(max_markets=max_kalshi)
+        kalshi_all = self._kalshi.get_markets(
+            max_markets=max_kalshi, series_ticker=kalshi_series
+        )
+        kalshi_markets = [
+            m for m in kalshi_all if not is_parlay(f"{m.title} {m.subtitle}")
+        ]
+        kalshi_markets.sort(key=lambda m: -(m.volume_24h or 0))
         logger.info(
-            "候选池：Polymarket %d 个（Yes/No 型），Kalshi %d 个",
-            len(poly_markets), len(kalshi_markets),
+            "候选池：Polymarket %d 个（Yes/No 型），Kalshi %d 个（过滤串关后，原始 %d）",
+            len(poly_markets), len(kalshi_markets), len(kalshi_all),
         )
         for pool, rows in (
             ("Poly", [m["question"] for m in poly_markets[:3]]),
             ("Kalshi", [f"{m.title} {m.subtitle}".strip() for m in kalshi_markets[:3]]),
         ):
             logger.info("%s 样例: %s", pool, " | ".join(rows) or "（空）")
+
+        prepped = [
+            (km, _tokens(title), extract_features(title))
+            for km in kalshi_markets
+            for title in [f"{km.title} {km.subtitle}".strip()]
+        ]
         suggestions = []
         for pm in poly_markets:
+            poly_tokens = _tokens(pm["question"])
+            poly_features = extract_features(pm["question"])
             best = None
-            for km in kalshi_markets:
-                score = similarity(pm["question"], f"{km.title} {km.subtitle}")
+            for km, kalshi_tokens, kalshi_features in prepped:
+                text_score = _score_token_sets(poly_tokens, kalshi_tokens)
+                struct_score = structured_score(poly_features, kalshi_features)
+                score = max(text_score, struct_score)
                 if score < min_score:
                     continue
                 gap = close_time_gap_days(pm.get("end_date", ""), km.close_time)
                 if gap is not None and gap > max_gap_days:
                     continue
                 if best is None or score > best[0]:
-                    best = (score, km, gap)
+                    best = (score, km, gap, "structured" if struct_score > text_score else "text")
             if best is not None:
-                score, km, gap = best
+                score, km, gap, match_type = best
                 suggestions.append({
                     "score": round(score, 3),
+                    "match_type": match_type,
                     "close_gap_days": round(gap, 2) if gap is not None else None,
                     "poly_condition_id": pm["condition_id"],
                     "poly_question": pm["question"],
