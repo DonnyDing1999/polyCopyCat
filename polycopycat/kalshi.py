@@ -41,15 +41,30 @@ def taker_fee(price: float) -> float:
     return 0.07 * price * (1.0 - price)
 
 
-def _cents(value: Any) -> float | None:
-    """整数美分 → 美元；0 / 缺失 / 越界视为无报价。"""
+def _price(value: Any) -> float | None:
+    """兼容两代价格表示 → 美元。
+
+    - 分数定价（2025 改制后）：美元小数字符串/浮点，如 "0.0010"、0.42
+    - 旧版：整数美分，如 42
+    0 / 缺失 / 越界视为无报价。
+    """
     try:
-        cents = int(value)
+        v = float(value)
     except (TypeError, ValueError):
         return None
-    if cents <= 0 or cents >= 100:
-        return None
-    return cents / 100.0
+    if 0 < v < 1:
+        return v
+    if 1 <= v <= 99 and v == int(v):
+        return v / 100.0
+    return None
+
+
+def _field_price(raw: dict, name: str) -> float | None:
+    """市场列表字段：优先旧字段，缺失/不合法再试 *_dollars 变体。"""
+    price = _price(raw.get(name))
+    if price is None:
+        price = _price(raw.get(f"{name}_dollars"))
+    return price
 
 
 @dataclass(frozen=True)
@@ -75,10 +90,10 @@ class KalshiMarket:
             title=str(raw.get("title", "")),
             subtitle=str(raw.get("subtitle") or raw.get("yes_sub_title") or ""),
             close_time=str(raw.get("close_time", "")),
-            yes_bid=_cents(raw.get("yes_bid")),
-            yes_ask=_cents(raw.get("yes_ask")),
-            no_bid=_cents(raw.get("no_bid")),
-            no_ask=_cents(raw.get("no_ask")),
+            yes_bid=_field_price(raw, "yes_bid"),
+            yes_ask=_field_price(raw, "yes_ask"),
+            no_bid=_field_price(raw, "no_bid"),
+            no_ask=_field_price(raw, "no_ask"),
             volume_24h=float(raw.get("volume_24h") or 0),
             liquidity=float(raw.get("liquidity") or 0),
             status=str(raw.get("status", "")),
@@ -129,7 +144,7 @@ class KalshiBook:
             out = []
             for row in rows or []:
                 try:
-                    price, count = _cents(row[0]), float(row[1])
+                    price, count = _price(row[0]), float(row[1])
                 except (TypeError, ValueError, IndexError):
                     continue
                 if price is not None and count > 0:
@@ -137,10 +152,16 @@ class KalshiBook:
             out.sort(key=lambda lv: lv.price, reverse=True)
             return tuple(out)
 
-        book = raw.get("orderbook") if isinstance(raw.get("orderbook"), dict) else raw
+        # 分数定价改制后的容器是 orderbook_fp（yes_dollars/no_dollars），
+        # 旧格式是 orderbook（yes/no，整数美分）；两代都认
+        book: dict[str, Any] = raw
+        for key in ("orderbook_fp", "orderbook"):
+            if isinstance(raw.get(key), dict):
+                book = raw[key]
+                break
         return cls(
-            yes_bids=levels(book.get("yes")),
-            no_bids=levels(book.get("no")),
+            yes_bids=levels(book.get("yes_dollars", book.get("yes"))),
+            no_bids=levels(book.get("no_dollars", book.get("no"))),
         )
 
     def ask(self, side: str) -> KalshiLevel | None:

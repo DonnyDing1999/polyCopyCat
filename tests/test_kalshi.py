@@ -91,6 +91,36 @@ def test_orderbook_garbage_levels_skipped():
     assert len(book.yes_bids) == 1 and book.yes_bids[0].price == 0.35
 
 
+def test_orderbook_fp_dollars_format():
+    # 2025 分数定价改制后的真实格式（取自 CI 探针捕获的实际响应）
+    raw = {"orderbook_fp": {
+        "no_dollars": [["0.0010", "9112600.00"], ["0.0300", "997303.00"]],
+        "yes_dollars": [["0.0200", "1000.00"], ["0.0150", "500.00"]],
+    }}
+    book = KalshiBook.from_api(raw)
+    assert book.no_bids[0].price == 0.03 and book.no_bids[0].count == 997303.0
+    assert book.yes_bids[0].price == 0.02
+    ask_yes = book.ask("yes")   # = 1 - 最高 No 买价 0.03
+    assert abs(ask_yes.price - 0.97) < 1e-9 and ask_yes.count == 997303.0
+    ask_no = book.ask("no")     # = 1 - 最高 Yes 买价 0.02
+    assert abs(ask_no.price - 0.98) < 1e-9 and ask_no.count == 1000.0
+
+
+def test_market_fields_dollars_fallback():
+    payload = {"cursor": "", "markets": [{
+        "ticker": "KX-FP", "event_ticker": "KX", "title": "T", "subtitle": "",
+        "close_time": "2026-07-14T00:00:00Z", "status": "open",
+        "yes_bid_dollars": "0.42", "yes_ask_dollars": "0.4500",
+        "no_bid_dollars": "0.54", "no_ask_dollars": "0.58",
+        "volume_24h": 10, "liquidity": 100,
+    }]}
+    client = KalshiClient("https://kalshi.test", session=FakeSession([FakeResponse(payload=payload)]),
+                          backoff=0.0)
+    m = client.get_markets()[0]
+    assert m.yes_bid == 0.42 and m.yes_ask == 0.45
+    assert m.no_bid == 0.54 and m.no_ask == 0.58
+
+
 def test_taker_fee_formula():
     assert abs(taker_fee(0.5) - 0.0175) < 1e-9   # 峰值 1.75 分
     assert abs(taker_fee(0.9) - 0.0063) < 1e-9
