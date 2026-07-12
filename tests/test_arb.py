@@ -67,7 +67,8 @@ def book(bids=(), asks=()):
 
 
 def make_scanner(markets, books):
-    session = FakeSession(gets=[FakeResponse(payload=markets)])
+    # 翻页逻辑会在非空页后再要一页，末尾补一页空响应表示到底
+    session = FakeSession(gets=[FakeResponse(payload=markets), FakeResponse(payload=[])])
     scanner = ArbScanner(FakeClob(books), gamma_url="https://gamma.test", session=session)
     return scanner, session
 
