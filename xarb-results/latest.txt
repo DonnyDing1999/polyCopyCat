@@ -1,21 +1,82 @@
 未指定 --pairs，进入候选配对建议模式
-2026-07-12 07:41:41,137 INFO polycopycat.xarb: 候选池：Polymarket 269 个（Yes/No 型），Kalshi 32 个（过滤串关后，原始 10000）
-2026-07-12 07:41:41,137 INFO polycopycat.xarb: Poly 样例: Will Argentina win the 2026 FIFA World Cup? | Will England win the 2026 FIFA World Cup? | Will Demeke Mekonnen be the next Prime Minister of Ethiopia?
-2026-07-12 07:41:41,137 INFO polycopycat.xarb: Kalshi 样例: Trea Turner: 1+ stolen bases? Trea Turner: 1+ | Kyle Schwarber: 1+ stolen bases? Kyle Schwarber: 1+ | Bryce Harper: 1+ stolen bases? Bryce Harper: 1+
-
+2026-07-12 07:46:58,715 INFO polycopycat.xarb: 候选池：Polymarket 269 个（Yes/No 型），Kalshi 事件 4000 个
+2026-07-12 07:46:58,715 INFO polycopycat.xarb: Poly 样例: Will Argentina win the 2026 FIFA World Cup? | Will England win the 2026 FIFA World Cup? | Will Demeke Mekonnen be the next Prime Minister of Ethiopia?
+2026-07-12 07:46:58,715 INFO polycopycat.xarb: Kalshi事件 样例: Will Elon Musk visit Mars in his lifetime? Before 2099 | Who will be the next Secretary General of NATO? Before Jan 1, 2099 | Who will the next Pope be? Before 2070
+2026-07-12 07:47:08,336 INFO polycopycat.xarb: 事件粗配命中 646 个，拉取前 40 个事件的市场做精配
+  1. 文本匹配 0.78（截止差 0.62 天）
+     Poly:   Will Bernie Sanders win the 2028 Democratic presidential nomination?  [0x30cfb887558b20373a984da60c372fe5a90c0296aa6d8bb413a8aa7543846da2]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Bernie Sanders be the Democratic Presidential nominee in 2028? Bernie Sanders  [KXPRESNOMD-28-BS]
+  2. 文本匹配 0.78（截止差 0.62 天）
+     Poly:   Will Ro Khanna win the 2028 Democratic presidential nomination?  [0x20d0bc282552ac5ec6f61cd7101cb42a5948cae07e7651bdf40ede1a8b2c5eac]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Ro Khanna be the Democratic Presidential nominee in 2028? Ro Khanna  [KXPRESNOMD-28-RKHA]
+  3. 文本匹配 0.78（截止差 0.62 天）
+     Poly:   Will Mark Cuban win the 2028 Democratic presidential nomination?  [0x9d4f94f82de9d13ff1d3318639ab9000ee2533949e525343156f374fb00bd9b1]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Mark Cuban be the Democratic Presidential nominee in 2028? Mark Cuban  [KXPRESNOMD-28-MC]
+  4. 文本匹配 0.78（截止差 0.62 天）
+     Poly:   Will Mark Kelly win the 2028 Democratic presidential nomination?  [0x36db77c539bcc8c7bf0686c1b99f30c5a5eed1f53d3b3a27a071550c81f83701]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Mark Kelly be the Democratic Presidential nominee in 2028? Mark Kelly  [KXPRESNOMD-28-MK]
+  5. 文本匹配 0.78（截止差 1.62 天）
+     Poly:   Will the US confirm that aliens exist before 2027?  [0x747dc809fb79e1b05be09c42d6179459a58de2ef3e40f02484a4e1260f741f75]
+     Kalshi: Will the U.S. confirm that aliens exist? Before 2027 Will the U.S. confirm that aliens exist before 2027? Before 2027  [KXALIENS-27]
+  6. 文本匹配 0.78（截止差 0.62 天）
+     Poly:   Will Chris Murphy win the 2028 Democratic presidential nomination?  [0xc720fcfa9e29346a976902f87e0f0f3bdc31d43af501b4fdef4f1780a30dd359]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Chris Murphy be the Democratic Presidential nominee in 2028? Chris Murphy  [KXPRESNOMD-28-CMUR]
+  7. 文本匹配 0.78（截止差 0.62 天）
+     Poly:   Will Pete Buttigieg win the 2028 Democratic presidential nomination?  [0x4c325469d9b516ef4e6b8f73a81a12607dec075e3c2fd454f91765aaeafc4760]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Pete Buttigieg be the Democratic Presidential nominee in 2028? Pete Buttigieg  [KXPRESNOMD-28-PB]
+  8. 文本匹配 0.78（截止差 0.62 天）
+     Poly:   Will Ruben Gallego win the 2028 Democratic presidential nomination?  [0x98933c78b5e277b62d91a6c174b412218de000b54c4c67ec8673bf561cec6e81]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Ruben Gallego be the Democratic Presidential nominee in 2028? Ruben Gallego  [KXPRESNOMD-28-RGAL]
+  9. 文本匹配 0.69（截止差 0.62 天）
+     Poly:   Will Beto O’Rourke win the 2028 Democratic presidential nomination?  [0x8ecd1d15e521b7d1020ad5596cc981c8764e9dcfbc3648f582e1a5138aee7185]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Beto O'Rourke be the nominee for the Presidency for the Democratic party? Beto O'Rourke  [KXPRESNOMD-28-BORO]
+ 10. 文本匹配 0.69（截止差 0.62 天）
+     Poly:   Will Donald Trump Jr. win the 2028 Republican presidential nomination?  [0x4a9d58d4da874e26708f5bdb014eb07a06aeebb927068d169d43831595386557]
+     Kalshi: 2028 Republican Presidential ticket 2028 Will Marco Rubio and Donald Trump Jr. be the 2028 Republican Presidential ticket? Marco Rubio and Donald Trump Jr.  [KXRTICKET-28NOV07-MRUBDTJR]
+ 11. 文本匹配 0.69（截止差 0.62 天）
+     Poly:   Will J.D. Vance win the 2028 Republican presidential nomination?  [0x18b1c135d0a40c5894da9412e77311827d9caf16cf4cd6591b247a34730af919]
+     Kalshi: 2028 Republican presidential nominee In 2028 Will J.D. Vance be the nominee for the Presidency for the Republican party? J.D. Vance  [KXPRESNOMR-28-JDV]
+ 12. 文本匹配 0.65（截止差 0.62 天）
+     Poly:   Will Kristi Noem win the 2028 Republican presidential nomination?  [0x5f1b1caf70eb994bfff2986727a05a3ac9f7ec8b0da4017f7732596d023e5a07]
+     Kalshi: 2028 Republican presidential nominee In 2028 Will Kristi Noem be the nominee for the Presidency for the Republican party? Kristi Noem  [KXPRESNOMR-28-KNOE]
+ 13. 文本匹配 0.65（截止差 0.62 天）
+     Poly:   Will Andrew Yang win the 2028 Democratic presidential nomination?  [0x450810ae738a0ff820d3248f2b24937f63fb8c8cf422ed2a915125adb4d9d3c8]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Andrew Yang be the nominee for the Presidency for the Democratic party? Andrew Yang  [KXPRESNOMD-28-AYAN]
+ 14. 文本匹配 0.65（截止差 1.62 天）
+     Poly:   Trump out as President before 2027?  [0x48b0b0bca515f68fccf95af4793dbd0edbfec1f8ec6e8df2c0f69ba74f8c4722]
+     Kalshi: Donald Trump announces departure as President? (Excluding death) Before 2027 Donald Trump out before 2027? Before 2027  [KXTRUMPOUT27-27-DJT]
+ 15. 文本匹配 0.65（截止差 0.62 天）
+     Poly:   Will Donald Trump win the 2028 Republican presidential nomination?  [0x895e01dbf3e6a33cd9a44ca0f8cdb5df1bd2b0b6ebed5300d28f8da7145145e4]
+     Kalshi: 2028 Republican Presidential ticket 2028 Will Marco Rubio and Donald Trump be the 2028 Republican Presidential ticket? Marco Rubio and Donald Trump  [KXRTICKET-28NOV07-MRUBDJT]
+ 16. 文本匹配 0.65（截止差 0.62 天）
+     Poly:   Will Ron DeSantis win the 2028 Republican presidential nomination?  [0x64d31a2af85518c6718a5757a35b840f08eca20c1e22c0eb1e96ec01cc55b8b6]
+     Kalshi: 2028 Republican Presidential ticket 2028 Will Ron DeSantis and Marco Rubio be the 2028 Republican Presidential ticket? Ron DeSantis and Marco Rubio  [KXRTICKET-28NOV07-RDESMRUB]
+ 17. 文本匹配 0.65（截止差 0.62 天）
+     Poly:   Will Mike Pence win the 2028 Republican presidential nomination?  [0x41c6341dd79903aca4bb0c29f5a7976946c3774d2fd72f38cbb7de7092144520]
+     Kalshi: 2028 Republican presidential nominee In 2028 Will Mike Pence be the nominee for the Presidency for the Republican party? Mike Pence  [KXPRESNOMR-28-MPEN]
+ 18. 结构化匹配 0.60（截止差 0.0 天）
+     Poly:   Will Bitcoin dip to $50,000 by December 31, 2026?  [0xce3c54c3e773e8b3bf73e4c12af93205b21195d03b9c386e22f274b9acfc2c56]
+     Kalshi: Will Satoshi move any Bitcoin by 2027? Before 2027 Will Satoshi move any Bitcoin by 2027? Before 2027  [KXSATOSHIBTCYEAR-27]
+ 19. 结构化匹配 0.60（截止差 0.0 天）
+     Poly:   Will Bitcoin dip to $55,000 by December 31, 2026?  [0x752fa61c93f16c4b15e85b0bd438d9c684176b0ea7b319a84c8aca34616e8a8c]
+     Kalshi: Will Satoshi move any Bitcoin by 2027? Before 2027 Will Satoshi move any Bitcoin by 2027? Before 2027  [KXSATOSHIBTCYEAR-27]
+ 20. 文本匹配 0.59（截止差 0.62 天）
+     Poly:   Will Pete Buttigieg win the 2028 US Presidential Election?  [0x2c03c41e5032364cb7166e842bdd22913f28aa2c837d8432704aa89c338875c8]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Pete Buttigieg be the Democratic Presidential nominee in 2028? Pete Buttigieg  [KXPRESNOMD-28-PB]
+ 21. 文本匹配 0.59（截止差 0.62 天）
+     Poly:   Will Gretchen Whitmer win the 2028 US Presidential Election?  [0xfd6176f8c9a59105f80e060a77c4099881c5f2d9e0ceab88e55cf978462fab7f]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Gretchen Whitmer be the Democratic Presidential nominee in 2028? Gretchen Whitmer  [KXPRESNOMD-28-GW]
+ 22. 文本匹配 0.59（截止差 0.62 天）
+     Poly:   Will Tim Walz win the 2028 US Presidential Election?  [0xae70ab9bf1c3726fe430a2ba8b517697ae24e0f0ab554b876a5b521153068882]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Tim Walz be the Democratic Presidential nominee in 2028? Tim Walz  [KXPRESNOMD-28-TW]
+ 23. 文本匹配 0.59（截止差 0.62 天）
+     Poly:   Will Ro Khanna win the 2028 US Presidential Election?  [0xb314f5dbf75919a34d4997e8b22e6793505e3377a690eaa11a75a2547e926bee]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Ro Khanna be the Democratic Presidential nominee in 2028? Ro Khanna  [KXPRESNOMD-28-RKHA]
+ 24. 文本匹配 0.59（截止差 0.62 天）
+     Poly:   Will Kamala Harris win the 2028 US Presidential Election?  [0xb3298af85e00aafad937c119444a5f2800a55343b7482eb75581f6e454432501]
 ⚠️ 候选只是文本相似：两边结算条款（数据源/截止时间/措辞）必须人工核对等价后，才能写进配对文件用于价差扫描——配错对不是套利，是双边敞口。
-没有相似度 ≥ 0.5 的候选配对
 
-—— 未达标的最接近候选（仅供校准阈值参考）——
-  1. [未达标] 文本匹配 0.29（截止差 0.02 天）
-     Poly:   Kylian Mbappé: 2+ goals  [0xe130f000e99ed76668f583fa720ee913ab433c67811d12f584d02aefcd2e2cb9]
-     Kalshi: Yordan Alvarez: 2+ RBIs? Yordan Alvarez: 2+  [KXMLBRBI-26JUL121435HOUTEX-HOUYALVAREZ44-2]
-  2. [未达标] 文本匹配 0.28（截止差 0.02 天）
-     Poly:   Exact Score: France 3 - 3 Spain?  [0x3dfeb44e97dbd3e9614b4c42a7e3e251cfb1a3efcee077e3e9c44a4448401596]
-     Kalshi: Yordan Alvarez: 3+ RBIs? Yordan Alvarez: 3+  [KXMLBRBI-26JUL121435HOUTEX-HOUYALVAREZ44-3]
-  3. [未达标] 文本匹配 0.28（截止差 0.02 天）
-     Poly:   Exact Score: France 1 - 1 Spain?  [0x28f26198c908f5f2cd2abdfd2e42afa09251afdcf49af9b38aedb09b035c0a68]
-     Kalshi: Yordan Alvarez: 1+ RBIs? Yordan Alvarez: 1+  [KXMLBRBI-26JUL121435HOUTEX-HOUYALVAREZ44-1]
-  4. [未达标] 文本匹配 0.28（截止差 0.02 天）
-     Poly:   Exact Score: France 2 - 2 Spain?  [0xd5bfdea40162994db6189b1fcc8d9dfb383771887b8b614d1672b4c79c520c65]
-     Kalshi: Yordan Alvarez: 2+ RBIs? Yordan Alvarez: 2+  [KXMLBRBI-26JUL121435HOUTEX-HOUYALVAREZ44-2]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Kamala Harris be the Democratic Presidential nominee in 2028? Kamala Harris  [KXPRESNOMD-28-KH]
+ 25. 文本匹配 0.59（截止差 0.62 天）
+     Poly:   Will Michelle Obama win the 2028 US Presidential Election?  [0xbbbece074c2d4010e39e39c85ed67b1131180fcea616073c893fb6beaf51d783]
+     Kalshi: 2028 Democratic presidential nominee In 2028 Will Michelle Obama be the Democratic Presidential nominee in 2028? Michelle Obama  [KXPRESNOMD-28-MO]
