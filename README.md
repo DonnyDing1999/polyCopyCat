@@ -296,6 +296,12 @@ pytest                # 124 个单测，无网络依赖，<1s
 
 端到端验证不打真实 API：用本地 mock（Data API + CLOB + WebSocket 都是标准库/websockets 起的假服务）驱动真实 CLI 子进程，逐场景断言输出与账本。具体流程和各命令的验证点写在 `.claude/skills/verify/SKILL.md`。实盘下单路径无法离线验证，上线前先小额实测。
 
+真实接口行为差异靠三个 GitHub Actions 工作流兜底（结果由 CI 提交回分支）：
+
+- `scout`：改 `.scout-request` 触发，内容透传给 `polycopycat scout`
+- `arb-scan`：改 `.arb-request` 触发，真实市场套利扫描
+- `smoke`：改 `.smoke-request` 触发，一次跑通 trades / `watch --stream`（RTDS 协议实测）/ CLOB 元数据与订单簿 / 纸面引擎全链路
+
 版本号在 `pyproject.toml` 与 `polycopycat/__init__.py`（当前 0.6.0），每交付一个里程碑 minor +1。
 
 ## 状态 / Roadmap
