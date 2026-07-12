@@ -123,5 +123,10 @@ jobs:
           git config user.name "smoke-bot"
           git config user.email "actions@users.noreply.github.com"
           git add -f smoke-results/summary.txt smoke-results/*.log
-          git commit -m "smoke 冒烟结果 [skip ci]" || echo "结果无变化"
+          git commit -m "smoke 冒烟结果 [skip ci]" || { echo "结果无变化"; exit 0; }
+          for attempt in 1 2 3; do
+            if git push; then exit 0; fi
+            echo "推送被拒（并发结果提交），rebase 后重试 #$attempt"
+            git pull --rebase origin ${GITHUB_REF_NAME}
+          done
           git push
