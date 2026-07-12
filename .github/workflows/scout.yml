@@ -1,8 +1,9 @@
 name: scout
 
 # 两种触发方式：
-# 1. 推送修改 .scout-request（一行一个或空格分隔的待评估地址）
-# 2. 在 Actions 页手动 Run workflow 并填地址
+# 1. 推送修改 .scout-request（内容原样传给 polycopycat scout：
+#    可以是地址列表，也可以是 --from-leaderboard --candidates 100 这类参数）
+# 2. 在 Actions 页手动 Run workflow 并填参数
 on:
   push:
     paths:
@@ -10,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       addresses:
-        description: "要评估的地址（空格分隔）"
+        description: "scout 参数（地址或 --from-leaderboard 等）"
         required: true
 
 permissions:
@@ -35,14 +36,16 @@ jobs:
       - name: 运行 scout
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            ADDRS="${{ github.event.inputs.addresses }}"
+            REQUEST="${{ github.event.inputs.addresses }}"
           else
-            ADDRS="$(tr '\n' ' ' < .scout-request)"
+            REQUEST="$(tr '\n' ' ' < .scout-request)"
           fi
-          echo "评估地址: $ADDRS"
+          echo "scout 参数: $REQUEST"
           mkdir -p scout-results
-          polycopycat scout $ADDRS --pages 2 --json > scout-results/latest.json || true
-          polycopycat scout $ADDRS --pages 2 | tee scout-results/latest.txt || true
+          polycopycat scout $REQUEST --pages 2 --json > scout-results/latest.json || true
+          polycopycat scout $REQUEST --pages 2 --targets-snippet --top 10 \
+            > scout-results/latest.txt 2>&1 || true
+          tail -20 scout-results/latest.txt
 
       - name: 提交结果
         run: |
