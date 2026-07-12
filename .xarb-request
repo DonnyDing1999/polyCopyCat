@@ -1,1 +1,1 @@
---suggest --max-markets 300 --min-score 0.45 --top 25
+--suggest --max-markets 300 --max-kalshi 6000 --min-score 0.4 --top 25

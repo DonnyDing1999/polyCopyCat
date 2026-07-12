@@ -262,23 +262,36 @@ def cmd_xarb_scan(args: argparse.Namespace) -> int:
         if suggest_mode:
             if not args.pairs:
                 print("未指定 --pairs，进入候选配对建议模式", file=sys.stderr)
-            suggestions = scanner.suggest_pairs(
-                max_poly=args.max_markets, min_score=args.min_score, top=args.top
+            # 用低地板拉全量打分，展示时再按 --min-score 分档，
+            # 这样零达标时也能看到"最接近的候选"作校准参考
+            scored = scanner.suggest_pairs(
+                max_poly=args.max_markets, max_kalshi=args.max_kalshi,
+                min_score=0.15, top=max(args.top, 10),
             )
+            qualified = [s for s in scored if s["score"] >= args.min_score][: args.top]
+            near_misses = [s for s in scored if s["score"] < args.min_score][:10]
+
+            def _print_suggestion(i, s, mark=""):
+                gap = (
+                    f"截止差 {s['close_gap_days']} 天"
+                    if s["close_gap_days"] is not None else "截止差未知"
+                )
+                print(f"{i:>3}. {mark}相似度 {s['score']:.2f}（{gap}）")
+                print(f"     Poly:   {s['poly_question']}  [{s['poly_condition_id']}]")
+                print(f"     Kalshi: {s['kalshi_title']}  [{s['kalshi_ticker']}]")
+
             if args.json:
-                for s in suggestions:
+                for s in qualified:
                     print(json.dumps(s, ensure_ascii=False), flush=True)
             else:
-                if not suggestions:
-                    print("没有相似度达标的候选配对")
-                for i, s in enumerate(suggestions, 1):
-                    gap = (
-                        f"截止差 {s['close_gap_days']} 天"
-                        if s["close_gap_days"] is not None else "截止差未知"
-                    )
-                    print(f"{i:>3}. 相似度 {s['score']:.2f}（{gap}）")
-                    print(f"     Poly:   {s['poly_question']}  [{s['poly_condition_id']}]")
-                    print(f"     Kalshi: {s['kalshi_title']}  [{s['kalshi_ticker']}]")
+                if not qualified:
+                    print(f"没有相似度 ≥ {args.min_score} 的候选配对")
+                for i, s in enumerate(qualified, 1):
+                    _print_suggestion(i, s)
+                if not qualified and near_misses:
+                    print(f"\n—— 未达标的最接近候选（仅供校准阈值参考）——")
+                    for i, s in enumerate(near_misses, 1):
+                        _print_suggestion(i, s, mark="[未达标] ")
             print(
                 "\n⚠️ 候选只是文本相似：两边结算条款（数据源/截止时间/措辞）必须人工"
                 "核对等价后，才能写进配对文件用于价差扫描——配错对不是套利，是双边敞口。",
@@ -556,6 +569,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="输出候选配对建议（可与 --pairs 同时用）")
     p_xarb.add_argument("--max-markets", type=int, default=300,
                         help="建议模式下 Polymarket 候选池大小（默认 300）")
+    p_xarb.add_argument("--max-kalshi", type=int, default=2000,
+                        help="建议模式下 Kalshi 候选池大小（默认 2000）")
     p_xarb.add_argument("--min-score", type=float, default=0.5,
                         help="建议模式的标题相似度阈值 0~1（默认 0.5）")
     p_xarb.add_argument("--top", type=int, default=20, help="建议条数上限（默认 20）")

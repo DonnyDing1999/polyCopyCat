@@ -192,6 +192,11 @@ class XarbScanner:
             "候选池：Polymarket %d 个（Yes/No 型），Kalshi %d 个",
             len(poly_markets), len(kalshi_markets),
         )
+        for pool, rows in (
+            ("Poly", [m["question"] for m in poly_markets[:3]]),
+            ("Kalshi", [f"{m.title} {m.subtitle}".strip() for m in kalshi_markets[:3]]),
+        ):
+            logger.info("%s 样例: %s", pool, " | ".join(rows) or "（空）")
         suggestions = []
         for pm in poly_markets:
             best = None
