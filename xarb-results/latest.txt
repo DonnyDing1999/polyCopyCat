@@ -1,30 +1,6 @@
-未指定 --pairs，进入候选配对建议模式
-2026-07-12 08:12:27,178 INFO polycopycat.xarb: 按关键词 ['france', 'spain', 'cup', 'mbappe', 'world', 'fifa'] 过滤后 Polymarket 剩 50 个
-2026-07-12 08:12:35,451 INFO polycopycat.xarb: 按关键词过滤后 Kalshi 事件剩 143 个
-2026-07-12 08:12:35,451 INFO polycopycat.xarb: 候选池：Polymarket 50 个（Yes/No 型），Kalshi 事件 143 个
-2026-07-12 08:12:35,451 INFO polycopycat.xarb: Poly 样例: Will Argentina win the 2026 FIFA World Cup? | Will England win the 2026 FIFA World Cup? | Will France win the 2026 FIFA World Cup?
-2026-07-12 08:12:35,451 INFO polycopycat.xarb: Kalshi事件 样例: Will the world pass 2 degrees Celsius over pre-industrial levels before 2050? Before 2050 | Who will host the 2038 FIFA World Cup? 2038 | Who will be the world's second trillionaire? Before Jan 1, 2033
-2026-07-12 08:12:35,517 INFO polycopycat.xarb: 事件粗配命中 74 个，拉取前 74 个事件的市场做精配
+对 2 条已确认配对算价差（Kalshi 手续费已计入）……
+已确认配对中当前没有达到阈值的跨所价差
 
-⚠️ 候选只是文本相似：两边结算条款（数据源/截止时间/措辞）必须人工核对等价后，才能写进配对文件用于价差扫描——配错对不是套利，是双边敞口。
-  1. 文本匹配 0.60（截止差未知）
-     Poly:   Will South America (CONMEBOL) win the 2026 FIFA World Cup?  [0x0ed2e5e985631ab71750ad21a40503508a5f7d928032b2d1f8c901013f4e002f]
-     Kalshi: Continent to Win the Men's World Cup 2026 Will South America (CONMEBOL) win the 2026 Men's World Cup? :: CONMEBOL  [KXWCCONTINENT-26-SA]
-  2. 文本匹配 0.56（截止差未知）
-     Poly:   Will Europe (UEFA) win the 2026 FIFA World Cup?  [0x3561a95d16ac2edfd3831aba4612c88c6f5b84a6f0924bdb6b07dc7cfe73e121]
-     Kalshi: Continent to Win the Men's World Cup 2026 Will Europe (UEFA) win the 2026 Men's World Cup? Europe:: UEFA  [KXWCCONTINENT-26-EUR]
-  3. 文本匹配 0.44（截止差 0.58 天）
-     Poly:   Will Argentina reach the 2026 FIFA World Cup final?  [0x328583376667b725cc6848dc9b61b205579b1314ecdb4334ea245aec270d2c66]
-     Kalshi: 2026 FIFA World Cup Final: Attendance 2026 FIFA World Cup Final Will Zendaya attend 2026 FIFA World Cup Final in 2026? Zendaya  [KXWCATTEND-26JUL20-ZEN]
-  4. 文本匹配 0.44（截止差 0.58 天）
-     Poly:   Will England reach the 2026 FIFA World Cup final?  [0x2bf419aa66753cd95324dfe102ad2d0d5bdb0205cf52735a389134b78f2b2139]
-     Kalshi: 2026 FIFA World Cup Final: Attendance 2026 FIFA World Cup Final Will Zendaya attend 2026 FIFA World Cup Final in 2026? Zendaya  [KXWCATTEND-26JUL20-ZEN]
-  5. 文本匹配 0.44（截止差 0.58 天）
-     Poly:   Will France reach the 2026 FIFA World Cup final?  [0x125c399641397f7b7cc111f3729999e32154a916deb1161527af031decde1f77]
-     Kalshi: 2026 FIFA World Cup Final: Attendance 2026 FIFA World Cup Final Will Zendaya attend 2026 FIFA World Cup Final in 2026? Zendaya  [KXWCATTEND-26JUL20-ZEN]
-  6. 文本匹配 0.44（截止差 0.42 天）
-     Poly:   President Trump to Attend World Cup Final?  [0x6389dc74e27218b50657af632dbca4c5005d241c760bd979944bcd0d68493380]
-     Kalshi: 2026 FIFA World Cup Final: Attendance 2026 FIFA World Cup Final Will Zendaya attend 2026 FIFA World Cup Final in 2026? Zendaya  [KXWCATTEND-26JUL20-ZEN]
-  7. 文本匹配 0.44（截止差 0.58 天）
-     Poly:   Will Spain reach the 2026 FIFA World Cup final?  [0x8bdf55664cb17a543fef1f43bd6aeb0aa7b7849cb31620808ce258b3e2ab136d]
-     Kalshi: 2026 FIFA World Cup Final: Attendance 2026 FIFA World Cup Final Will Zendaya attend 2026 FIFA World Cup Final in 2026? Zendaya  [KXWCATTEND-26JUL20-ZEN]
+—— 各配对当前最优组合（负边际 = 无套利，差多少一目了然）——
+  边际 -0.011（两腿成本 1.011，Poly 0.800 + Kalshi 0.200 + 费 0.011，深度 502）  Will Europe (UEFA) win the 2026 FIFA World Cup? ↔ KXWCCONTINENT-26-EUR
+  边际 -0.021（两腿成本 1.021，Poly 0.200 + Kalshi 0.810 + 费 0.011，深度 912）  Will South America (CONMEBOL) win the 2026 FIFA World Cup? ↔ KXWCCONTINENT-26-SA
