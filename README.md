@@ -49,7 +49,7 @@ polycopycat report --config copycat.json
 | `run --config <文件>` | 启动跟单引擎（纸面/实盘由配置决定） |
 | `report` | 查看账本：信号统计、持仓、盈亏、最近订单 |
 
-所有子命令都支持 `--json`（JSON lines 输出接下游）和 `--base-url`（替换 Data API 入口）；顶层 `-v` 开调试日志，`--version` 看版本。地址一律用 Polymarket 个人主页 URL 里的 0x 地址（proxy wallet）。
+所有子命令都支持 `--json`（JSON lines 输出接下游）、`--base-url`（替换 Data API 入口）和 `-v` 调试日志（放在子命令前后均可）；`--version` 看版本。地址一律用 Polymarket 个人主页 URL 里的 0x 地址（proxy wallet）。
 
 ### trades / watch —— 读取与监控
 
@@ -99,6 +99,8 @@ polycopycat arb-scan --max-markets 500 --min-edge 0.005 --min-profit 0.5
 - 市场目录来自 Gamma API（按 24h 成交量取前 N 个活跃市场）
 
 诚实定位：这是速度游戏，肉眼可见的价差通常几百毫秒内被专业机器人吃掉；本工具只读不下单，用于研究"值不值得做执行版"，不承诺你能抢到。
+
+**实测结论（2026-07，CI 真实扫描）**：前 100 与前 1000 活跃市场两轮扫描、利润门槛压到 $0.1，机会数均为 **0**——互补对套利在人肉时间尺度上已被专业机器人吃尽，执行版没有价值。本工具保留用作市场效率探针。
 
 ### run / report —— 跟单引擎
 
@@ -190,7 +192,7 @@ polycopycat report --config copycat.json         # 或 report --ledger data/copy
 
 ## 跟单规则与已知边界
 
-**买入**：跟随金额 = min(目标金额 × ratio, 单笔上限)（或固定金额模式）；限价 = 目标成交价 + slippage_cap，按市场 tick 取整、校验最小下单量，FAK 只吃限价内的盘口。
+**买入**：跟随金额 = min(目标金额 × ratio, 单笔上限)（或固定金额模式）；限价 = 目标成交价 + slippage_cap，按市场 tick 取整，FAK 只吃限价内的盘口。计划量低于市场最小下单量（一般 5 份）会跳过并记入账本——**跟小单风格的目标时把 ratio 调高（如 1.0）或改用 fixed 模式**，否则大部分信号会被这条规则丢掉；`report` 里 `skipped` 占比过高就是这个信号。
 
 **卖出**：目标卖掉他持仓的 x%，就卖掉自己持仓的 x%。目标持仓镜像 = 启动/定期 `/positions` 快照 + 每笔成交实时累加（无论该笔跟没跟都更新），merge/redeem 等不出现在成交流里的变化由对账兜住；镜像没记录时按全平保守离场；余量将低于最小下单量时直接全平，避免死仓。
 
@@ -282,9 +284,12 @@ polycopycat/
 │   ├── metrics.py    #   成交带回放 → 战绩指标
 │   ├── score.py      #   排除规则 + 打分
 │   └── runner.py     #   候选来源（全站流/排行榜）与评估编排
-tests/                # 124 个单测，全部离线（HTTP/WS 均为注入的假实现）
+tests/                # 138 个单测，全部离线（HTTP/WS 均为注入的假实现）
 config.example.json   # 引擎配置示例
 .claude/skills/verify # 端到端验证手册：本地 mock 全套接口驱动真实 CLI
+.github/workflows/    # 三个真实接口 CI：scout / arb-scan / smoke
+.scout-request 等     # 改这些请求文件即触发对应 CI，结果由 CI 提交回
+scout-results/ 等     # CI 回写的评估 / 扫描 / 冒烟结果（json + txt）
 ```
 
 ## 开发与测试
@@ -302,7 +307,13 @@ pytest                # 124 个单测，无网络依赖，<1s
 - `arb-scan`：改 `.arb-request` 触发，真实市场套利扫描
 - `smoke`：改 `.smoke-request` 触发，一次跑通 trades / `watch --stream`（RTDS 协议实测）/ CLOB 元数据与订单簿 / 纸面引擎全链路
 
-版本号在 `pyproject.toml` 与 `polycopycat/__init__.py`（当前 0.6.0），每交付一个里程碑 minor +1。
+**真实环境验证状态（2026-07 冒烟 4/4 PASS）**：Data API（成交/持仓/全站流）、
+RTDS 实时推送（90 秒 16 条实时成交、240 秒零断线）、CLOB（元数据/订单簿/批量、
+negRisk 市场）、Gamma 目录、排行榜均已实测通过；纸面引擎在真实行情下完成过
+买入跟单与跟随卖出。**唯一未实测路径是实盘签名下单**（需要私钥与真实资金），
+上线时用最小金额验证第一单。
+
+版本号在 `pyproject.toml` 与 `polycopycat/__init__.py`（当前 0.8.1），每交付一个里程碑 minor +1。
 
 ## 状态 / Roadmap
 
