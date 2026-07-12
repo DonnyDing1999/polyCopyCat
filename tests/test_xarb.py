@@ -173,6 +173,19 @@ def test_scan_pairs_no_edge_when_fair():
     assert abs(d["sum_cost"] - (1 - d["edge_per_pair"])) < 1e-9
 
 
+def test_scan_pairs_diagnostics_name_missing_legs():
+    poly_books = {"tokY": OrderBook(asks=(BookLevel(0.05, 100),)),
+                  "tokN": OrderBook()}                      # No 腿无卖单
+    kalshi_book = KalshiBook.from_api({"orderbook": {"yes": [], "no": []}})  # Kalshi 全空
+    scanner = make_scanner([poly_market()], poly_books, FakeKalshi(books={"KX-1": kalshi_book}))
+    diagnostics = []
+    scanner.scan_pairs([PairConfig("0xc1", "KX-1")], diagnostics_out=diagnostics)
+    assert len(diagnostics) == 1
+    detail = diagnostics[0]["detail"]
+    assert "poly_yes_asks=1" in detail and "poly_no_asks=0" in detail
+    assert "kalshi_yes_bids=0" in detail and "kalshi_no_bids=0" in detail
+
+
 def test_extract_features_asset_word_not_double_counted_as_entity():
     f = extract_features("Will Satoshi move any Bitcoin by 2027?")
     assert f.asset == "btc"

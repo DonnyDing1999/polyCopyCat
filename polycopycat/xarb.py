@@ -524,6 +524,14 @@ class XarbScanner:
                 ))
             if diagnostics_out is not None:
                 if best_diag is None:
+                    poly_yes_book = books.get(token_yes)
+                    poly_no_book = books.get(token_no)
+                    legs = (
+                        f"poly_yes_asks={len(poly_yes_book.asks) if poly_yes_book else '无簿'}, "
+                        f"poly_no_asks={len(poly_no_book.asks) if poly_no_book else '无簿'}, "
+                        f"kalshi_yes_bids={len(kalshi_book.yes_bids)}, "
+                        f"kalshi_no_bids={len(kalshi_book.no_bids)}"
+                    )
                     best_diag = {
                         "poly_condition_id": pair.poly_condition_id,
                         "kalshi_ticker": pair.kalshi_ticker,
@@ -531,7 +539,7 @@ class XarbScanner:
                         "combo": None,
                         "edge_per_pair": None,
                         "poly_question": pm["question"],
-                        "detail": "至少一边没有可成交报价（订单簿为空）",
+                        "detail": f"至少一边没有可成交报价（{legs}）",
                     }
                 diagnostics_out.append(best_diag)
         opportunities.sort(key=lambda o: -o.profit_usdc)
