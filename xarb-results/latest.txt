@@ -1,9 +1,10 @@
 未指定 --pairs，进入候选配对建议模式
-2026-07-12 08:10:00,342 INFO polycopycat.xarb: 按关键词 ['france', 'spain', 'cup', 'mbappe', 'world', 'fifa'] 过滤后 Polymarket 剩 50 个
-2026-07-12 08:10:08,169 INFO polycopycat.xarb: 候选池：Polymarket 50 个（Yes/No 型），Kalshi 事件 6897 个
-2026-07-12 08:10:08,169 INFO polycopycat.xarb: Poly 样例: Will Argentina win the 2026 FIFA World Cup? | Will England win the 2026 FIFA World Cup? | Will France win the 2026 FIFA World Cup?
-2026-07-12 08:10:08,169 INFO polycopycat.xarb: Kalshi事件 样例: Will Elon Musk visit Mars in his lifetime? Before 2099 | Who will be the next Secretary General of NATO? Before Jan 1, 2099 | Who will the next Pope be? Before 2070
-2026-07-12 08:10:11,266 INFO polycopycat.xarb: 事件粗配命中 204 个，拉取前 40 个事件的市场做精配
+2026-07-12 08:12:27,178 INFO polycopycat.xarb: 按关键词 ['france', 'spain', 'cup', 'mbappe', 'world', 'fifa'] 过滤后 Polymarket 剩 50 个
+2026-07-12 08:12:35,451 INFO polycopycat.xarb: 按关键词过滤后 Kalshi 事件剩 143 个
+2026-07-12 08:12:35,451 INFO polycopycat.xarb: 候选池：Polymarket 50 个（Yes/No 型），Kalshi 事件 143 个
+2026-07-12 08:12:35,451 INFO polycopycat.xarb: Poly 样例: Will Argentina win the 2026 FIFA World Cup? | Will England win the 2026 FIFA World Cup? | Will France win the 2026 FIFA World Cup?
+2026-07-12 08:12:35,451 INFO polycopycat.xarb: Kalshi事件 样例: Will the world pass 2 degrees Celsius over pre-industrial levels before 2050? Before 2050 | Who will host the 2038 FIFA World Cup? 2038 | Who will be the world's second trillionaire? Before Jan 1, 2033
+2026-07-12 08:12:35,517 INFO polycopycat.xarb: 事件粗配命中 74 个，拉取前 74 个事件的市场做精配
 
 ⚠️ 候选只是文本相似：两边结算条款（数据源/截止时间/措辞）必须人工核对等价后，才能写进配对文件用于价差扫描——配错对不是套利，是双边敞口。
   1. 文本匹配 0.60（截止差未知）
