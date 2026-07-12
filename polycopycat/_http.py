@@ -17,22 +17,13 @@ class HttpError(RuntimeError):
     """请求重试后仍失败或返回不可用数据。"""
 
 
-def get_json(
-    session: requests.Session,
-    url: str,
-    *,
-    params: dict[str, Any] | None = None,
-    timeout: float = 10.0,
-    max_retries: int = 3,
-    backoff: float = 1.0,
-) -> Any:
-    """GET 并解析 JSON；429/5xx 与网络错误按指数退避重试。"""
+def _send_with_retries(send, url: str, *, max_retries: int, backoff: float) -> Any:
     last_error: Exception | None = None
     for attempt in range(max(1, max_retries)):
         if attempt:
             time.sleep(backoff * (2 ** (attempt - 1)))
         try:
-            response = session.get(url, params=params, timeout=timeout)
+            response = send()
         except requests.RequestException as exc:
             last_error = exc
             logger.debug("请求 %s 失败（第 %d 次）: %s", url, attempt + 1, exc)
@@ -52,3 +43,35 @@ def get_json(
         except ValueError as exc:
             raise HttpError(f"返回了无法解析的 JSON: {exc}") from exc
     raise HttpError(f"请求 {url} 连续 {max_retries} 次失败: {last_error}") from last_error
+
+
+def get_json(
+    session: requests.Session,
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    timeout: float = 10.0,
+    max_retries: int = 3,
+    backoff: float = 1.0,
+) -> Any:
+    """GET 并解析 JSON；429/5xx 与网络错误按指数退避重试。"""
+    return _send_with_retries(
+        lambda: session.get(url, params=params, timeout=timeout),
+        url, max_retries=max_retries, backoff=backoff,
+    )
+
+
+def post_json(
+    session: requests.Session,
+    url: str,
+    *,
+    json_body: Any = None,
+    timeout: float = 10.0,
+    max_retries: int = 3,
+    backoff: float = 1.0,
+) -> Any:
+    """POST JSON 并解析响应；重试语义同 get_json。"""
+    return _send_with_retries(
+        lambda: session.post(url, json=json_body, timeout=timeout),
+        url, max_retries=max_retries, backoff=backoff,
+    )

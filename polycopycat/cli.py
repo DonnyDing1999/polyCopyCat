@@ -186,6 +186,49 @@ def cmd_scout(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_arb_scan(args: argparse.Namespace) -> int:
+    from ._http import HttpError
+    from .arb import ArbScanner
+    from .engine.clob import ClobReadClient
+
+    clob = ClobReadClient(base_url=args.clob_url)
+    scanner = ArbScanner(clob, gamma_url=args.gamma_url)
+    print(
+        f"扫描前 {args.max_markets} 个活跃市场（按 24h 成交量），"
+        f"最小边际 {args.min_edge}，最小可锁定利润 ${args.min_profit}……",
+        file=sys.stderr,
+    )
+    try:
+        opportunities = scanner.scan(
+            max_markets=args.max_markets,
+            min_edge=args.min_edge,
+            min_profit=args.min_profit,
+        )
+    except HttpError as exc:
+        print(f"扫描失败：{exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        for opp in opportunities:
+            print(json.dumps(opp.to_dict(), ensure_ascii=False), flush=True)
+    else:
+        if not opportunities:
+            print("本轮快照没有达到阈值的套利机会（正常：这类机会存活时间极短）")
+        for i, opp in enumerate(opportunities, 1):
+            kind = "买对冲" if opp.kind == "buy_pair" else "铸造卖出(需链上split)"
+            flag = " [negRisk]" if opp.neg_risk else ""
+            print(
+                f"{i:>3}. {kind}  边际 ${opp.edge_per_pair:.3f}/对 × {opp.max_pairs:,.0f} 对"
+                f" ≈ ${opp.profit_usdc:,.2f}  Yes {opp.price_yes:.3f} + No {opp.price_no:.3f}"
+                f"{flag}  {opp.question}"
+            )
+    print(
+        f"\n共 {len(opportunities)} 个机会（顶档深度口径）。提醒：这是一帧快照，"
+        "等你手动下单时大概率已被吃掉；执行版有单腿成交风险，需另行实现。",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from .engine.clob import ClobReadClient
     from .engine.config import ConfigError, load_config
@@ -420,6 +463,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="额外输出可直接并入 copycat.json 的 targets 配置段",
     )
     p_scout.set_defaults(func=cmd_scout)
+
+    p_arb = sub.add_parser(
+        "arb-scan", parents=[common],
+        help="扫描互补对套利机会：ask(Yes)+ask(No)<$1 等（只读研究工具，不下单）",
+    )
+    p_arb.add_argument("--max-markets", type=int, default=500,
+                       help="扫描前多少个活跃市场，按 24h 成交量降序（默认 500）")
+    p_arb.add_argument("--min-edge", type=float, default=0.005,
+                       help="每对最小价差，价格量纲（默认 0.005 = 半分钱）")
+    p_arb.add_argument("--min-profit", type=float, default=0.5,
+                       help="顶档深度下最小可锁定利润 USDC（默认 0.5）")
+    p_arb.add_argument("--gamma-url", default=None,
+                       help="市场目录接口（默认 gamma-api.polymarket.com，"
+                            "可用环境变量 POLYCOPYCAT_GAMMA_URL 覆盖）")
+    p_arb.add_argument("--clob-url", default=None,
+                       help="CLOB 地址（默认官方，环境变量 POLYCOPYCAT_CLOB_URL）")
+    p_arb.set_defaults(func=cmd_arb_scan)
 
     p_run = sub.add_parser(
         "run", parents=[common],
