@@ -1,1 +1,1 @@
---max-markets 500 --min-edge 0.005 --min-profit 0.25
+--max-markets 1000 --min-edge 0.005 --min-profit 0.1

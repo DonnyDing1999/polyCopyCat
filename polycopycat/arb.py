@@ -100,18 +100,25 @@ class ArbScanner:
         self.timeout = timeout
 
     def discover_markets(self, limit: int = 500) -> list[dict[str, Any]]:
-        """从 Gamma 拉活跃二元市场（按 24h 成交量降序），解析出 token 对。"""
+        """从 Gamma 拉活跃二元市场（按 24h 成交量降序），解析出 token 对。
+
+        注意：服务端会对单页条数封顶（实测 100，低于请求值），所以
+        「页没满」不代表到底了——只有空页或整页重复才停。
+        """
         markets: list[dict[str, Any]] = []
+        seen: set[str] = set()
         offset = 0
-        while len(markets) < limit:
-            page_size = min(_GAMMA_PAGE, limit - len(markets))
+        for _ in range(100):  # 翻页护栏
+            if len(markets) >= limit:
+                break
             try:
                 data = get_json(
                     self._session, f"{self.gamma_url}/markets",
                     params={
                         "active": "true", "closed": "false",
                         "order": "volume24hr", "ascending": "false",
-                        "limit": page_size, "offset": offset,
+                        "limit": min(_GAMMA_PAGE, limit - len(markets)),
+                        "offset": offset,
                     },
                     timeout=self.timeout,
                 )
@@ -119,21 +126,29 @@ class ArbScanner:
                 raise ArbError(f"拉取市场目录失败: {exc}") from exc
             if not isinstance(data, list):
                 raise ArbError(f"预期市场目录返回列表，实际是: {data!r:.120}")
+            if not data:
+                break
+            fresh = 0
             for raw in data:
                 if not isinstance(raw, dict):
                     continue
+                condition_id = str(raw.get("conditionId", ""))
+                if not condition_id or condition_id in seen:
+                    continue
+                seen.add(condition_id)
                 tokens = [str(t) for t in _parse_json_list(raw.get("clobTokenIds"))]
                 if len(tokens) != 2:
                     continue  # 只做二元互补对
+                fresh += 1
                 markets.append({
-                    "condition_id": str(raw.get("conditionId", "")),
+                    "condition_id": condition_id,
                     "question": str(raw.get("question", "")),
                     "neg_risk": bool(raw.get("negRisk", False)),
                     "tokens": tokens,
                 })
+            if fresh == 0:
+                break  # 服务端忽略 offset 或已到底，防止空转
             offset += len(data)
-            if len(data) < page_size:
-                break
         return markets[:limit]
 
     def scan(

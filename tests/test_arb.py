@@ -132,13 +132,36 @@ def test_missing_book_or_bad_tokens_skipped():
     assert scanner.scan() == []
 
 
-def test_discovery_pagination_stops_on_short_page():
+def test_discovery_pages_past_server_cap():
+    # 服务端把单页封顶在 2 条（低于请求的 5 条）——要继续翻页而不是当成到底
+    pages = [
+        [gamma_market(cid=f"0xc{i}", yes=f"y{i}", no=f"n{i}") for i in range(2)],
+        [gamma_market(cid=f"0xc{i}", yes=f"y{i}", no=f"n{i}") for i in range(2, 4)],
+        [gamma_market(cid="0xc4", yes="y4", no="n4")],
+    ]
+    session = FakeSession(gets=[FakeResponse(payload=p) for p in pages])
+    scanner = ArbScanner(FakeClob({}), gamma_url="https://gamma.test", session=session)
+    markets = scanner.discover_markets(limit=5)
+    assert len(markets) == 5
+    assert len(session.get_requests) == 3
+    assert session.get_requests[1][1]["offset"] == 2  # 第二页从 2 开始
+
+
+def test_discovery_stops_on_empty_page():
     page1 = [gamma_market(cid=f"0xc{i}", yes=f"y{i}", no=f"n{i}") for i in range(3)]
-    session = FakeSession(gets=[FakeResponse(payload=page1)])
+    session = FakeSession(gets=[FakeResponse(payload=page1), FakeResponse(payload=[])])
+    scanner = ArbScanner(FakeClob({}), gamma_url="https://gamma.test", session=session)
+    assert len(scanner.discover_markets(limit=500)) == 3
+    assert len(session.get_requests) == 2
+
+
+def test_discovery_stops_when_server_ignores_offset():
+    page = [gamma_market(cid="0xc1", yes="y1", no="n1")]
+    session = FakeSession(gets=[FakeResponse(payload=page)] * 5)
     scanner = ArbScanner(FakeClob({}), gamma_url="https://gamma.test", session=session)
     markets = scanner.discover_markets(limit=500)
-    assert len(markets) == 3
-    assert len(session.get_requests) == 1  # 短页即止，不再翻页
+    assert len(markets) == 1
+    assert len(session.get_requests) == 2  # 第二页全是重复 → 停
 
 
 def test_gamma_failure_raises_arb_error():
