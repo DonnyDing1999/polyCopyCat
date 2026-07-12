@@ -143,6 +143,7 @@ def cmd_scout(args: argparse.Namespace) -> int:
     config = ScoutConfig(
         min_trades=args.min_trades,
         min_notional_usdc=args.min_notional,
+        min_win_rate=args.min_win_rate,
     )
     print(
         f"开始评估 {len(candidates)} 个地址（每个拉最近 {args.pages} 页成交带 + 当前持仓）……",
@@ -412,6 +413,8 @@ def build_parser() -> argparse.ArgumentParser:
                          help="样本下限：窗口内最少成交笔数（默认 20）")
     p_scout.add_argument("--min-notional", type=float, default=2000.0,
                          help="窗口内总成交额下限 USDC（默认 2000）")
+    p_scout.add_argument("--min-win-rate", type=float, default=0.5,
+                         help="胜率下限 0~1（默认 0.5；主要看胜率时可调高）")
     p_scout.add_argument(
         "--targets-snippet", action="store_true",
         help="额外输出可直接并入 copycat.json 的 targets 配置段",

@@ -88,6 +88,46 @@ def test_low_win_rate_excluded():
     assert any("胜率过低" in r for r in verdict.reasons)
 
 
+def test_structural_arb_win_rate_excluded():
+    # 60 笔配对卖出、100% 胜率：人类做不到，是结构性套利的signature
+    stats = replay(ADDR, tape_winner(n_markets=60))
+    assert stats.matched_sells == 60 and stats.win_rate == 1.0
+    verdict = evaluate(stats, [], ScoutConfig(), now=NOW)
+    assert not verdict.eligible
+    assert any("结构性套利" in r for r in verdict.reasons)
+
+
+def test_dead_position_drag_excluded():
+    # 持仓成本 $500，按市价浮亏 98% → 死仓/藏亏嫌疑
+    positions = [Position(proxy_wallet=ADDR, asset="tok1", condition_id="0xc",
+                          size=1000, avg_price=0.50, cur_price=0.01)]
+    stats = replay(ADDR, tape_winner())
+    verdict = evaluate(stats, positions, ScoutConfig(), now=NOW)
+    assert not verdict.eligible
+    assert any("死仓" in r for r in verdict.reasons)
+
+
+def test_small_exposure_skips_drawdown_rule():
+    # 持仓成本 $40 低于判定门槛，浮亏比例再高也不触发
+    positions = [Position(proxy_wallet=ADDR, asset="tok1", condition_id="0xc",
+                          size=100, avg_price=0.40, cur_price=0.01)]
+    stats = replay(ADDR, tape_winner())
+    verdict = evaluate(stats, positions, ScoutConfig(), now=NOW)
+    assert verdict.eligible, verdict.reasons
+
+
+def test_frequency_cap_tightened():
+    # 每天 120 笔（>100）应被判为机器人
+    tape = []
+    for i in range(120):
+        tape.append(Trade(proxy_wallet=ADDR, side="BUY", asset=f"t{i}",
+                          condition_id=f"0xc{i}", size=100, price=0.5,
+                          timestamp=NOW - 3600 + i * 20, transaction_hash=f"0x{i}"))
+    stats = replay(ADDR, tape)
+    verdict = evaluate(stats, [], ScoutConfig(), now=NOW)
+    assert any("机器人" in r for r in verdict.reasons)
+
+
 def test_buy_and_hold_gets_neutral_win_score():
     tape = [Trade(proxy_wallet=ADDR, side="BUY", asset=f"tok{i}", condition_id=f"0xc{i}",
                   size=300, price=0.5, timestamp=NOW - i * 3600, transaction_hash=f"0x{i}")

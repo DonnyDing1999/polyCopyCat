@@ -22,11 +22,15 @@ class ScoutConfig:
     max_inactive_days: float = 7.0        # 最近活跃要求
     max_quick_flip_ratio: float = 0.5     # 快进快出占比上限（做市嫌疑）
     min_quick_sample: int = 5             # 快进快出判定所需的最少配对卖出数
-    max_trades_per_day: float = 150.0     # 频率上限（机器人嫌疑）
+    max_trades_per_day: float = 100.0     # 频率上限（机器人嫌疑）
     min_realized_pnl: float = 0.0         # 回放盈亏下限
     min_pnl_sample: int = 3               # 盈亏判定所需的最少配对卖出数
     min_win_rate: float = 0.5             # 胜率下限
     min_win_sample: int = 10              # 胜率判定所需的最少配对卖出数
+    max_win_rate: float = 0.95            # 胜率上限：大样本下高得离谱 = 结构性套利
+    max_win_rate_sample: int = 50         # 套利判定所需的最少配对卖出数
+    max_unrealized_drawdown_ratio: float = 0.5  # 持仓浮亏/成本 超过此比例 = 疑似死仓
+    min_exposure_for_drawdown_usdc: float = 500.0  # 死仓判定所需的最小持仓成本
     quick_window_s: float = DEFAULT_QUICK_WINDOW_S
     request_delay_s: float = 0.15         # 逐地址评估时的限速间隔
 
@@ -105,6 +109,21 @@ def evaluate(
         and win_rate < config.min_win_rate
     ):
         reasons.append(f"胜率过低（{win_rate:.0%} < {config.min_win_rate:.0%}）")
+    if (
+        win_rate is not None
+        and stats.matched_sells >= config.max_win_rate_sample
+        and win_rate > config.max_win_rate
+    ):
+        reasons.append(
+            f"胜率 {win_rate:.0%}×{stats.matched_sells} 笔，高得不像方向性交易"
+            "（疑似结构性套利）"
+        )
+    if exposure >= config.min_exposure_for_drawdown_usdc:
+        drawdown = unrealized / exposure
+        if drawdown < -config.max_unrealized_drawdown_ratio:
+            reasons.append(
+                f"持仓浮亏占成本 {-drawdown:.0%}（疑似大量死仓/只认盈不认亏）"
+            )
 
     if reasons:
         return Verdict(

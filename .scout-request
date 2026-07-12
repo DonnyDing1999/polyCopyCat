@@ -1,1 +1,1 @@
---from-leaderboard --window 30d --candidates 100
+--from-leaderboard --window all --candidates 100 --min-win-rate 0.55
