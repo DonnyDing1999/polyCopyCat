@@ -37,3 +37,8 @@ data/
 .DS_Store
 .idea/
 .vscode/
+
+# 个人跟单配置（含跟单目标，勿泄露策略到 public 仓库）
+copycat.json
+paper-week.json
+*.copycat.json
