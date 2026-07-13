@@ -25,6 +25,8 @@ from .data_api import DataApiClient, DataApiError, normalize_address
 from .models import Trade
 from .watcher import TradeWatcher
 
+logger = logging.getLogger(__name__)
+
 # 实时推送线程和轮询主线程都会打印成交，避免行间交错
 _EMIT_LOCK = threading.Lock()
 
@@ -674,6 +676,30 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def use_os_trust_store() -> bool:
+    """让 Python 用操作系统的信任库（而不是 certifi 自带的 Mozilla 根）。
+
+    公司网络常做 TLS 中间人：代理换成自己的证书，签发它的公司根 CA 装在
+    系统钥匙串里（所以 Safari/Chrome 能打开），但 requests/websocket 默认走
+    certifi，看不到公司根，于是 CERTIFICATE_VERIFY_FAILED。装了 truststore
+    就把 SSL 默认上下文切到系统信任库，requests 和 websocket 一起生效。
+
+    未安装 truststore 时静默跳过（返回 False），不影响正常网络环境。
+    可用 POLYCOPYCAT_NO_TRUSTSTORE=1 显式关闭。
+    """
+    import os as _os
+
+    if _os.environ.get("POLYCOPYCAT_NO_TRUSTSTORE"):
+        return False
+    try:
+        import truststore
+    except ImportError:
+        return False
+    truststore.inject_into_ssl()
+    logger.debug("已启用系统信任库（truststore），走 OS 证书校验")
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(
@@ -681,6 +707,7 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,
     )
+    use_os_trust_store()  # 公司 TLS 中间人环境下改用系统信任库，见函数说明
     try:
         return args.func(args)
     except DataApiError as exc:

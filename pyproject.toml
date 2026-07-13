@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "polycopycat"
-version = "0.15.0"
+version = "0.16.0"
 description = "Polymarket 跟单系统：监控目标地址成交并按规则自动跟单"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,6 +19,10 @@ dev = [
 ]
 live = [
     "py-clob-client>=0.17",
+]
+# 公司 TLS 中间人环境：改用系统信任库（macOS 钥匙串 / Windows 证书库）
+os-certs = [
+    "truststore>=0.9",
 ]
 
 [project.scripts]
