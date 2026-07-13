@@ -7,9 +7,10 @@
 from .data_api import DataApiClient, DataApiError, normalize_address
 from .models import Trade
 from .stream import TradeStream
+from .us import UsApiClient, UsApiError
 from .watcher import TradeWatcher
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
 __all__ = [
     "DataApiClient",
@@ -17,6 +18,8 @@ __all__ = [
     "Trade",
     "TradeStream",
     "TradeWatcher",
+    "UsApiClient",
+    "UsApiError",
     "normalize_address",
     "__version__",
 ]

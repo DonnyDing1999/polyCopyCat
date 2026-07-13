@@ -7,6 +7,7 @@
     polycopycat watch 0x地址A --stream        # 实时推送，秒内跟到新下单
     polycopycat run --config copycat.json     # 跟单引擎（纸面/实盘由配置决定）
     polycopycat report --config copycat.json  # 查看持仓与盈亏
+    polycopycat us match "btc above 100k" --quote  # Polymarket US（美国站）行情对照
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import threading
 import time
 
 from . import __version__
+from ._http import HttpError
 from .data_api import DataApiClient, DataApiError, normalize_address
 from .models import Trade
 from .watcher import TradeWatcher
@@ -313,6 +315,122 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _us_client(args: argparse.Namespace):
+    from .us import UsApiClient
+
+    return UsApiClient(base_url=args.us_url)
+
+
+def _format_us_market(market) -> str:
+    flags = []
+    if not market.active:
+        flags.append("inactive")
+    if market.closed:
+        flags.append("closed")
+    suffix = f"  ({'/'.join(flags)})" if flags else ""
+    event = (
+        f"  · {market.event_title}"
+        if market.event_title and market.event_title != market.title
+        else ""
+    )
+    return (
+        f"{market.slug:<44} [{market.outcome or '?'}] {market.title}{event}"
+        f"  量 ${market.volume:,.0f}{suffix}"
+    )
+
+
+def cmd_us_markets(args: argparse.Namespace) -> int:
+    client = _us_client(args)
+    query = " ".join(args.query).strip()
+    if query:
+        status = None if args.include_closed else "active"
+        markets = client.search_markets(query, status=status, limit=args.limit)[: args.limit]
+    else:
+        active = None if args.include_closed else True
+        closed = None if args.include_closed else False
+        markets = client.get_markets(limit=args.limit, active=active, closed=closed)
+    for market in markets:
+        print(
+            json.dumps(market.to_dict(), ensure_ascii=False) if args.json
+            else _format_us_market(market),
+            flush=True,
+        )
+    if not markets:
+        print("（没有匹配的市场）", file=sys.stderr)
+    return 0
+
+
+def cmd_us_book(args: argparse.Namespace) -> int:
+    client = _us_client(args)
+    book = client.get_book(args.slug)
+    if args.json:
+        print(json.dumps(book.to_dict(), ensure_ascii=False))
+        return 0
+    header = f"# {book.market_slug or args.slug}"
+    if book.state:
+        header += f"  状态 {book.state}"
+    if book.last_trade_px:
+        header += f"  最新成交 {book.last_trade_px:.3f}"
+    print(header)
+    for level in list(book.asks[: args.depth])[::-1]:
+        print(f"  卖 {level.price:.3f} x {level.size:>10,.0f}")
+    print("  " + "-" * 24)
+    for level in book.bids[: args.depth]:
+        print(f"  买 {level.price:.3f} x {level.size:>10,.0f}")
+    if not book.bids and not book.asks:
+        print("（订单簿为空）", file=sys.stderr)
+    return 0
+
+
+def cmd_us_bbo(args: argparse.Namespace) -> int:
+    client = _us_client(args)
+    bbo = client.get_bbo(args.slug)
+    if args.json:
+        print(json.dumps(bbo.to_dict(), ensure_ascii=False))
+        return 0
+    spread = f"{bbo.spread:.3f}" if bbo.spread is not None else "?"
+    print(
+        f"{bbo.market_slug or args.slug}  "
+        f"买一 {bbo.best_bid:.3f}(挂 {bbo.bid_depth}) / 卖一 {bbo.best_ask:.3f}(挂 {bbo.ask_depth})  "
+        f"价差 {spread}  最新 {bbo.last_trade_px:.3f}  "
+        f"已成交 {bbo.shares_traded:,.0f} 份  未平仓 {bbo.open_interest:,.0f}"
+    )
+    return 0
+
+
+def cmd_us_match(args: argparse.Namespace) -> int:
+    from .us import UsApiError, match_us_markets
+
+    client = _us_client(args)
+    text = " ".join(args.text)
+    matches = match_us_markets(client, text, outcome=args.outcome, top=args.top)
+    if not matches:
+        print("没有找到候选市场（可以换个说法或减少关键词再试）", file=sys.stderr)
+        return 1
+    for rank, match in enumerate(matches, 1):
+        bbo = None
+        if args.quote:
+            try:
+                bbo = client.get_bbo(match.market.slug)
+            except UsApiError as exc:
+                print(f"（{match.market.slug} 报价获取失败：{exc}）", file=sys.stderr)
+        if args.json:
+            data = match.to_dict()
+            if bbo is not None:
+                data["bbo"] = bbo.to_dict()
+            print(json.dumps(data, ensure_ascii=False), flush=True)
+        else:
+            quote = (
+                f"  买 {bbo.best_bid:.3f} / 卖 {bbo.best_ask:.3f}" if bbo is not None else ""
+            )
+            print(f"{rank:>3}. {match.score:>5.1f}分  {_format_us_market(match.market)}{quote}")
+    print(
+        "\n提醒：分数只是词面相似度排序，两站市场的口径、结算规则可能不同，下单前先人工确认。",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
@@ -456,6 +574,69 @@ def build_parser() -> argparse.ArgumentParser:
     p_report.add_argument("--ledger", default=None, help="直接指定账本 sqlite 路径（优先于 --config）")
     p_report.add_argument("--limit", type=int, default=20, help="最近订单条数（默认 20）")
     p_report.set_defaults(func=cmd_report)
+
+    p_us = sub.add_parser(
+        "us",
+        help="Polymarket US（美国合规站）：只读行情与主站市场匹配",
+    )
+    us_common = argparse.ArgumentParser(add_help=False)
+    us_common.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="输出调试日志（放在子命令前后均可）",
+    )
+    us_common.add_argument(
+        "--json", action="store_true",
+        help="按 JSON lines 输出，方便接下游程序",
+    )
+    us_common.add_argument(
+        "--us-url", default=None,
+        help="Polymarket US gateway 地址（默认官方 gateway.polymarket.us，"
+             "也可用环境变量 POLYCOPYCAT_US_URL 覆盖）",
+    )
+    us_sub = p_us.add_subparsers(dest="us_command", required=True)
+
+    p_us_markets = us_sub.add_parser(
+        "markets", parents=[us_common],
+        help="列出或搜索 US 站市场",
+    )
+    p_us_markets.add_argument(
+        "query", nargs="*",
+        help="搜索关键词；留空则列出活跃市场",
+    )
+    p_us_markets.add_argument("--limit", type=int, default=20, help="最多输出多少个（默认 20）")
+    p_us_markets.add_argument(
+        "--include-closed", action="store_true",
+        help="包含已关闭/未激活的市场（默认只看活跃）",
+    )
+    p_us_markets.set_defaults(func=cmd_us_markets)
+
+    p_us_book = us_sub.add_parser("book", parents=[us_common], help="查看某市场订单簿")
+    p_us_book.add_argument("slug", help="市场 slug（用 us markets / us match 查）")
+    p_us_book.add_argument("--depth", type=int, default=10, help="每侧显示几档（默认 10）")
+    p_us_book.set_defaults(func=cmd_us_book)
+
+    p_us_bbo = us_sub.add_parser("bbo", parents=[us_common], help="查看某市场最优买卖价")
+    p_us_bbo.add_argument("slug", help="市场 slug")
+    p_us_bbo.set_defaults(func=cmd_us_bbo)
+
+    p_us_match = us_sub.add_parser(
+        "match", parents=[us_common],
+        help="把主站市场（标题或 slug）匹配到 US 站对应市场",
+    )
+    p_us_match.add_argument(
+        "text", nargs="+",
+        help="主站市场标题、slug 或关键词（slug 会自动拆词）",
+    )
+    p_us_match.add_argument(
+        "--outcome", default=None,
+        help="结果名（如 Yes / No / 队名），参与打分",
+    )
+    p_us_match.add_argument("--top", type=int, default=5, help="输出前几名（默认 5）")
+    p_us_match.add_argument(
+        "--quote", action="store_true",
+        help="同时拉取每个候选的最优买卖价（每个候选多一次请求）",
+    )
+    p_us_match.set_defaults(func=cmd_us_match)
     return parser
 
 
@@ -470,6 +651,9 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args)
     except DataApiError as exc:
         print(f"请求 Polymarket Data API 失败：{exc}", file=sys.stderr)
+        return 1
+    except HttpError as exc:
+        print(f"请求失败：{exc}", file=sys.stderr)
         return 1
 
 

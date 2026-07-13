@@ -49,6 +49,7 @@ polycopycat report --config copycat.json
 | `scout [地址...]` | 寻找值得跟单的地址：回放战绩、排除做市/亏损地址 |
 | `run --config <文件>` | 启动跟单引擎（纸面/实盘由配置决定） |
 | `report` | 查看账本：信号统计、持仓、盈亏、最近订单 |
+| `us <子命令>` | Polymarket US（美国合规站）行情与匹配：markets / book / bbo / match |
 
 所有子命令都支持 `--json`（JSON lines 输出接下游）、`--base-url`（替换 Data API 入口）和 `-v` 调试日志（放在子命令前后均可）；`--version` 看版本。地址一律用 Polymarket 个人主页 URL 里的 0x 地址（proxy wallet）。
 
@@ -152,6 +153,7 @@ polycopycat report --config copycat.json         # 或 report --ledger data/copy
 | `POLYCOPYCAT_WS_URL` | 覆盖实时推送入口 |
 | `POLYCOPYCAT_CLOB_URL` | 覆盖 CLOB 入口 |
 | `POLYCOPYCAT_LB_URL` | 覆盖排行榜入口 |
+| `POLYCOPYCAT_US_URL` | 覆盖 Polymarket US gateway 入口 |
 | `POLYCOPYCAT_PRIVATE_KEY` | 实盘私钥（变量名可在 `live.private_key_env` 改；绝不落盘、绝不进日志） |
 | 自定义名 | Telegram bot token，变量名由 `notify.telegram_bot_token_env` 指定 |
 
@@ -163,6 +165,7 @@ polycopycat report --config copycat.json         # 或 report --ledger data/copy
 | 实时数据流 | `wss://ws-live-data.polymarket.com` | 实时成交推送（官网活动流同款） | 公开；协议按公开资料实现 |
 | CLOB | `clob.polymarket.com` | 市场元数据、订单簿（只读）；实盘下单（L1/L2 鉴权） | 官方 |
 | 排行榜 | `lb-api.polymarket.com` | scout 候选来源 | **非正式文档**，不可用时自动跳过 |
+| Polymarket US gateway | `gateway.polymarket.us` | `us` 子命令（美国站行情、市场匹配） | 公开，无需鉴权；有反爬拦截，见下节 |
 
 ## 时延：轮询 vs 实时推送
 
@@ -210,6 +213,25 @@ polycopycat report --config copycat.json         # 或 report --ledger data/copy
   #1 paper BUY 48.07@≤0.520 → filled 成交 48.07@0.514 滑点 +0.014 pnl +0.00  [Yes] ...
 ```
 
+## Polymarket US（美国合规站）
+
+Polymarket US 和主站是两个独立平台：跑在 QCEX（CFTC 持牌交易所）上，账户要 KYC，订单簿中心化，也没有公开的按用户成交数据，所以在美国站上"盯人跟单"做不到。目前接入的是无需鉴权的 gateway 只读行情，用途是对照两站盘口，以及把主站信号对应到美国站市场：
+
+```bash
+polycopycat us markets nfl                    # 搜索市场；不带关键词则列出活跃市场
+polycopycat us book <slug> --depth 5          # 订单簿（卖侧在上，买侧在下）
+polycopycat us bbo <slug>                     # 最优买卖价、价差、未平仓量
+polycopycat us match "Bitcoin above $100k" --outcome Yes --quote   # 主站市场 → US 候选
+```
+
+`us match` 把主站市场的标题（或 slug）拿到美国站搜索，按词面相似度排序：词集重合 70% + 数字重合 20% + 结果名 10%。数字单独加权，因为价位和日期往往是两个市场之间唯一的区别（"BTC above $100k" 和 "BTC above $150k" 词面几乎一样）。分数只用来排序，两站的结算口径可能不同，下单前先人工确认是不是同一个问题。
+
+已知边界：
+
+- gateway 有反爬拦截，脚本直连可能拿到 403。被拦时用 `--us-url` 或 `POLYCOPYCAT_US_URL` 指到自己的代理
+- 交易和实时推送在 `api.polymarket.us`，需要 Ed25519 API key（在 polymarket.us/developer 申请），连行情 WebSocket 也要凭证。美国站实盘执行器等拿到 key 后接官方 SDK `polymarket-us`（见 Roadmap）
+- 价格量纲与主站一致（0~1 美元）；金额字段是 `{"value": "0.55", "currency": "USD"}` 形式的对象，订单簿卖侧键名是 `offers`，客户端都已归一成和主站一致的形状
+
 ## 在代码里使用
 
 ```python
@@ -236,6 +258,16 @@ from polycopycat.scout import ScoutConfig, scout_addresses
 verdicts = scout_addresses(client, ["0x地址A", "0x地址B"], config=ScoutConfig())
 for v in verdicts:
     print(v.address, v.eligible, v.score, v.reasons)
+```
+
+```python
+# Polymarket US：行情与市场匹配
+from polycopycat.us import UsApiClient, match_us_markets
+
+us = UsApiClient()
+print(us.get_bbo("某个市场slug").best_bid)
+for m in match_us_markets(us, "Bitcoin above $100k", top=3):
+    print(m.score, m.market.slug, m.market.title)
 ```
 
 引擎的组装方式见 `polycopycat/cli.py` 的 `cmd_run`（CopyEngine + 执行器 + 账本 + 通知的接线就是全部）。
@@ -266,7 +298,10 @@ polycopycat/
 │   ├── metrics.py    #   成交带回放 → 战绩指标
 │   ├── score.py      #   排除规则 + 打分
 │   └── runner.py     #   候选来源（全站流/排行榜）与评估编排
-tests/                # 128 个单测，全部离线（HTTP/WS 均为注入的假实现）
+├── us/               # Polymarket US（美国合规站）
+│   ├── api.py        #   gateway 只读行情：markets / book / bbo / settlement / search
+│   └── match.py      #   主站市场 → US 市场的词面匹配打分
+tests/                # 144 个单测，全部离线（HTTP/WS 均为注入的假实现）
 config.example.json   # 引擎配置示例
 .claude/skills/verify # 端到端验证手册：本地 mock 全套接口驱动真实 CLI
 .github/workflows/    # 真实接口 CI：scout / smoke
@@ -278,12 +313,12 @@ scout-results/ 等     # CI 回写的评估 / 扫描 / 冒烟结果（json + txt
 
 ```bash
 pip install -e ".[dev]"
-pytest                # 128 个单测，无网络依赖，<1s
+pytest                # 144 个单测，无网络依赖，约 1s
 ```
 
 端到端验证不打真实 API：用本地 mock（Data API + CLOB + WebSocket 都是标准库/websockets 起的假服务）驱动真实 CLI 子进程，逐场景断言输出与账本。具体流程和各命令的验证点写在 `.claude/skills/verify/SKILL.md`。实盘下单路径无法离线验证，上线前先小额实测。
 
-真实接口行为差异靠三个 GitHub Actions 工作流兜底（结果由 CI 提交回分支）：
+真实接口行为差异靠两个 GitHub Actions 工作流兜底（结果由 CI 提交回分支）：
 
 - `scout`：改 `.scout-request` 触发，内容透传给 `polycopycat scout`
 - `smoke`：改 `.smoke-request` 触发，一次跑通 trades / `watch --stream`（RTDS 协议实测）/ CLOB 元数据与订单簿 / 纸面引擎全链路
@@ -292,9 +327,11 @@ pytest                # 128 个单测，无网络依赖，<1s
 RTDS 实时推送（90 秒 16 条实时成交、240 秒零断线）、CLOB（元数据/订单簿/批量、
 negRisk 市场）、排行榜均已实测通过；纸面引擎在真实行情下完成过
 买入跟单与跟随卖出。**唯一未实测路径是实盘签名下单**（需要私钥与真实资金），
-上线时用最小金额验证第一单。
+上线时用最小金额验证第一单。Polymarket US gateway 对无浏览器指纹的直连有反爬
+拦截（403），`us` 子命令的解析逻辑按官方 SDK 契约实现并全部离线覆盖，
+真实入口通了之后再补冒烟。
 
-版本号在 `pyproject.toml` 与 `polycopycat/__init__.py`（当前 0.11.0），每交付一个里程碑 minor +1。
+版本号在 `pyproject.toml` 与 `polycopycat/__init__.py`（当前 0.12.0），每交付一个里程碑 minor +1。
 
 ## 状态 / Roadmap
 
@@ -305,6 +342,8 @@ negRisk 市场）、排行榜均已实测通过；纸面引擎在真实行情下
 - [x] 跟单引擎 M2：卖出跟随（持仓镜像）、定期对账、可赎回提醒
 - [x] scout：候选地址发现与战绩回放评分（排除做市/亏损/低样本地址）
 - [x] 套利扫描（站内互补对 + Kalshi 跨所）→ 已拆分至独立仓库 [polyArb](https://github.com/DonnyDing1999/polyArb)
+- [x] Polymarket US：gateway 只读行情 + 主站市场匹配（`us` 子命令）
+- [ ] Polymarket US 实盘执行器：官方 `polymarket-us` SDK 下单，把主站信号镜像到美国站（需 API key）
 - [ ] 信号聚合（分批建仓合并跟单）、自动 redeem、多目标信号轧差
 
 ## 风险提示

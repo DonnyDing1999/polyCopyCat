@@ -53,6 +53,14 @@ polycopycat watch 0x<40位hex> --interval 0.5 --backfill 1 --base-url http://127
   20 秒快进快出做市机器人 / 割肉亏损户 / 3 笔小样本）。验证点：
   鲸鱼合格且排第一、做市者哪怕账面盈利+高胜率也要被快进快出占比
   排除、`--targets-snippet` 只含合格地址、排行榜挂掉能优雅降级
+- `us`（Polymarket US gateway）：mock `/v1/markets`、`/v1/search`
+  （events 里嵌 markets）、`/v1/markets/{slug}/book`（注意卖侧键名
+  是 offers、价格是 `{"value":"0.52"}` 对象）、`/v1/markets/{slug}/bbo`，
+  CLI 加 `--us-url http://127.0.0.1:<port>`。验证点：markets 默认送
+  active=true&closed=false；book 卖侧从高到低在上、买侧从高到低在下；
+  bbo 价差算对；match 数字权重让 $100k 排在 $150k 前、`--quote --json`
+  时每行带 bbo；mock 回 403 → 退出码 1 报「请求失败」（真实 gateway
+  有反爬，脚本直连 403 属环境限制）
 
 ## 坑
 
