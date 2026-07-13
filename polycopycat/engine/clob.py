@@ -40,7 +40,7 @@ def _as_float(value: Any, default: float) -> float:
 
 @dataclass(frozen=True)
 class MarketInfo:
-    """下单需要的市场约束。"""
+    """下单需要的市场约束（以及结算后的 winner，用于纸面自动结算）。"""
 
     condition_id: str
     tick_size: float          # 价格步长（0.01 或 0.001）
@@ -50,9 +50,20 @@ class MarketInfo:
     closed: bool
     slug: str = ""
     question: str = ""
+    winner_token_ids: tuple[str, ...] = ()  # 已结算市场的获胜 token（未结算为空）
+
+    @property
+    def resolved(self) -> bool:
+        """已关闭且知道谁赢了，纸面持仓可以按结算价入账。"""
+        return self.closed and bool(self.winner_token_ids)
 
     @classmethod
     def from_api(cls, raw: dict[str, Any]) -> "MarketInfo":
+        winners = tuple(
+            str(t.get("token_id", ""))
+            for t in raw.get("tokens") or []
+            if isinstance(t, dict) and t.get("winner") and t.get("token_id")
+        )
         return cls(
             condition_id=str(raw.get("condition_id") or raw.get("conditionId") or ""),
             tick_size=_as_float(raw.get("minimum_tick_size"), 0.01),
@@ -62,6 +73,7 @@ class MarketInfo:
             closed=bool(raw.get("closed", False)),
             slug=str(raw.get("market_slug", "")),
             question=str(raw.get("question", "")),
+            winner_token_ids=winners,
         )
 
 
@@ -119,9 +131,10 @@ class ClobReadClient:
         self.backoff = backoff
         self._market_cache: dict[str, tuple[float, MarketInfo]] = {}
 
-    def get_market(self, condition_id: str) -> MarketInfo:
+    def get_market(self, condition_id: str, *, fresh: bool = False) -> MarketInfo:
+        """fresh=True 跳过缓存直查（结算检查用：缓存里的市场可能刚刚关闭）。"""
         cached = self._market_cache.get(condition_id)
-        if cached and time.monotonic() - cached[0] < _MARKET_CACHE_TTL:
+        if not fresh and cached and time.monotonic() - cached[0] < _MARKET_CACHE_TTL:
             return cached[1]
         data = self._get(f"/markets/{condition_id}")
         if not isinstance(data, dict):

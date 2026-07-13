@@ -30,6 +30,10 @@
   "execution": {
     "slippage_cap": 0.02
   },
+  "aggregate": {
+    "window_s": 2.0,
+    "net_across_targets": true
+  },
   "watch": {
     "stream": true,
     "poll_interval": null,
@@ -45,5 +49,6 @@
     "signature_type": 2,
     "i_understand_live_trading_risk": false
   },
-  "reconcile_interval_s": 300
+  "reconcile_interval_s": 300,
+  "auto_settle_resolved": true
 }

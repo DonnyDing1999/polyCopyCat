@@ -52,6 +52,7 @@ class SignalFilter:
         self._config = config
 
     def check(self, signal: Signal) -> tuple[bool, str]:
+        """逐笔检查（金额阈值除外——那个在聚合合并后检查，见 check_notional）。"""
         trade = signal.trade
         if signal.target.paused:
             return False, "目标地址已暂停跟单"
@@ -61,11 +62,20 @@ class SignalFilter:
             return False, "已配置不跟随卖出"
         if trade.price <= 0 or trade.size <= 0:
             return False, "成交价格或数量非法"
-        if trade.notional < self._config.min_target_notional_usdc:
-            return False, (
-                f"目标成交金额 ${trade.notional:.2f} 低于阈值 "
-                f"${self._config.min_target_notional_usdc:.2f}"
-            )
         if signal.age_s > self._config.max_signal_age_s:
             return False, f"信号已过期 {signal.age_s:.0f}s（阈值 {self._config.max_signal_age_s:.0f}s）"
         return True, ""
+
+    def check_notional(self, notional: float, count: int = 1) -> tuple[bool, str]:
+        """金额阈值检查：聚合后对合并金额做，treats 尘埃单按合计口径。"""
+        if notional >= self._config.min_target_notional_usdc:
+            return True, ""
+        if count > 1:
+            return False, (
+                f"合并 {count} 笔金额 ${notional:.2f} 仍低于阈值 "
+                f"${self._config.min_target_notional_usdc:.2f}"
+            )
+        return False, (
+            f"目标成交金额 ${notional:.2f} 低于阈值 "
+            f"${self._config.min_target_notional_usdc:.2f}"
+        )

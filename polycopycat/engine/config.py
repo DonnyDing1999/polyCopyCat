@@ -133,6 +133,27 @@ class ExecutionConfig:
 
 
 @dataclass
+class AggregateConfig:
+    """信号聚合与轧差（M3）。"""
+
+    window_s: float = 2.0            # 聚合窗口；0 或 null 表示不聚合、逐笔跟单
+    net_across_targets: bool = True  # 同窗口内多目标对同一 token 的反向信号轧差
+
+    def __post_init__(self) -> None:
+        if self.window_s in (None, 0, 0.0):
+            self.window_s = 0.0
+        else:
+            window = _positive("aggregate.window_s", self.window_s, allow_none=False)
+            if window > 30:
+                raise ConfigError(
+                    f"aggregate.window_s={window} 过大：窗口是跟单延迟的下限，"
+                    "超过 30s 会让大量信号超龄"
+                )
+            self.window_s = window
+        self.net_across_targets = bool(self.net_across_targets)
+
+
+@dataclass
 class WatchConfig:
     """信号源（复用 watch 的轮询 + 实时推送）。"""
 
@@ -182,11 +203,13 @@ class EngineConfig:
     filters: FilterConfig = field(default_factory=FilterConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
+    aggregate: AggregateConfig = field(default_factory=AggregateConfig)
     watch: WatchConfig = field(default_factory=WatchConfig)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
     live: LiveConfig = field(default_factory=LiveConfig)
     ledger_path: str = "data/copycat.sqlite3"
     reconcile_interval_s: float = 300.0
+    auto_settle_resolved: bool = True  # 纸面：市场结算后自动按结算价入账
     data_api_url: str | None = None  # 留空用官方入口/环境变量
     ws_url: str | None = None
     clob_url: str | None = None
@@ -204,6 +227,7 @@ class EngineConfig:
         self.reconcile_interval_s = _positive(
             "reconcile_interval_s", self.reconcile_interval_s, allow_none=False
         )
+        self.auto_settle_resolved = bool(self.auto_settle_resolved)
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "EngineConfig":
@@ -219,8 +243,8 @@ class EngineConfig:
             raise ConfigError(f"targets 配置有误: {exc}") from exc
         sections = {
             "sizing": SizingConfig, "filters": FilterConfig, "risk": RiskConfig,
-            "execution": ExecutionConfig, "watch": WatchConfig,
-            "notify": NotifyConfig, "live": LiveConfig,
+            "execution": ExecutionConfig, "aggregate": AggregateConfig,
+            "watch": WatchConfig, "notify": NotifyConfig, "live": LiveConfig,
         }
         kwargs: dict[str, Any] = {"targets": targets}
         for name, section_cls in sections.items():

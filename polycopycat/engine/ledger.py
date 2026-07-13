@@ -215,6 +215,41 @@ class Ledger:
         )
         return realized
 
+    def settle_position(self, token_id: str, settle_price: float, *, mode: str) -> float | None:
+        """市场结算后把持仓按结算价（赢 1.0 / 输 0.0）自动入账并清仓。
+
+        记一条 side=REDEEM、status=settled 的订单行（signal_id=0，非信号驱动），
+        使 report 的已实现盈亏统计如实包含结算损益。返回本次已实现盈亏；
+        无持仓返回 None。
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM positions WHERE token_id = ? AND size > 0", (token_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            size, avg_cost = row["size"], row["avg_cost"]
+            realized = round(size * (settle_price - avg_cost), 9)
+            now = time.time()
+            self._conn.execute(
+                """UPDATE positions SET size = 0, realized_pnl = realized_pnl + ?,
+                   updated_ts = ? WHERE token_id = ?""",
+                (realized, now, token_id),
+            )
+            self._conn.execute(
+                """INSERT INTO orders
+                   (signal_id, created_ts, mode, token_id, condition_id, title, outcome,
+                    side, limit_price, req_size, filled_size, avg_price, notional,
+                    slippage, realized_pnl, status, detail)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    0, now, mode, token_id, row["condition_id"], row["title"], row["outcome"],
+                    "REDEEM", settle_price, size, size, settle_price, size * settle_price,
+                    0.0, realized, "settled", "市场已结算，按结算价自动入账",
+                ),
+            )
+        return realized
+
     def sync_positions(self, positions) -> None:
         """实盘对账：用 Data API 持仓快照整体覆盖持仓表。
 

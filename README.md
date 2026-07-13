@@ -99,8 +99,8 @@ polycopycat report --config copycat.json         # 或 report --ledger data/copy
 引擎管道（每个环节的结论都落账本，可追溯）：
 
 ```
-信号（watch/stream 双通道去重）→ 过滤 → 仓位计算 → 风控闸门 → 执行器 → sqlite 账本 → 通知
-                                                                └ 对账线程：目标持仓镜像 / 实盘持仓同步 / 可赎回提醒
+信号（watch/stream 双通道去重）→ 逐笔过滤 → 聚合/轧差（窗口，默认 2s）→ 仓位计算 → 风控闸门 → 执行器 → sqlite 账本 → 通知
+                                                                        └ 对账线程：目标持仓镜像 / 实盘持仓同步 / 纸面自动结算 / 可赎回提醒
 ```
 
 ## 配置参考（copycat.json）
@@ -111,7 +111,8 @@ polycopycat report --config copycat.json         # 或 report --ledger data/copy
 | --- | --- | --- |
 | `mode` | `paper` | `paper` 纸面模拟 / `live` 实盘 |
 | `ledger_path` | `data/copycat.sqlite3` | 账本位置（`data/` 已在 .gitignore） |
-| `reconcile_interval_s` | 300 | 对账周期：刷新目标镜像、实盘同步持仓 |
+| `reconcile_interval_s` | 300 | 对账周期：刷新目标镜像、实盘同步持仓、纸面结算检查 |
+| `auto_settle_resolved` | true | 纸面：市场结算后按 1.00/0.00 自动入账清仓 |
 | `data_api_url` / `ws_url` / `clob_url` | 官方入口 | 走代理或本地测试时覆盖 |
 | **targets[]** |  | 跟单目标，至少一个 |
 | `.address` | 必填 | 目标 proxy wallet 地址 |
@@ -132,6 +133,9 @@ polycopycat report --config copycat.json         # 或 report --ledger data/copy
 | `.kill_switch_file` | `STOP` | 该文件存在时全面停止开新仓 |
 | **execution** |  |  |
 | `.slippage_cap` | 0.02 | 限价 = 目标成交价 ± 此值，FAK 绝不追价 |
+| **aggregate** |  | 信号聚合与轧差 |
+| `.window_s` | 2.0 | 聚合窗口秒数（也是跟单延迟下限）；0 或 null 逐笔跟单 |
+| `.net_across_targets` | true | 同窗口内多目标对同一 token 反向时只执行净头寸 |
 | **watch** |  | 信号源 |
 | `.stream` | true | 实时推送 + 轮询兜底 |
 | `.poll_interval` | null | null = 自动（stream 模式 60s，纯轮询 10s） |
@@ -182,21 +186,22 @@ polycopycat report --config copycat.json         # 或 report --ledger data/copy
 
 **卖出**：目标卖掉他持仓的 x%，就卖掉自己持仓的 x%。目标持仓镜像 = 启动/定期 `/positions` 快照 + 每笔成交实时累加（无论该笔跟没跟都更新），merge/redeem 等不出现在成交流里的变化由对账兜住；镜像没记录时按全平保守离场；余量将低于最小下单量时直接全平，避免死仓。
 
-**纸面模式**（默认）：执行器拉实时订单簿逐档模拟 FAK 成交，滑点按真实盘口算，账本记的就是「如果真跟会怎样」。注意纸面结果略偏乐观（没有排队竞争、你的单不推动价格）：纸面亏的实盘一定亏，纸面小赚的未必赚。
+**聚合与轧差**：目标一次建仓常拆成几秒内的多笔碎片成交。引擎收到首笔信号后等一个窗口（`aggregate.window_s`，默认 2s），把窗口内同目标、同 token、同方向的成交合成一笔（数量求和、价格按 VWAP）再走后续管道——金额阈值按合并后口径判，碎片单不再被尘埃规则逐笔拦掉，单笔上限也按合并后的一笔计。同窗口内多个目标对同一 token 方向相反时只执行净头寸（`net_across_targets`），被抵消的信号记为 `netted`。窗口就是跟单延迟的下限，跟高频目标时调小或设 0 关闭。
+
+**纸面模式**（默认）：执行器拉实时订单簿逐档模拟 FAK 成交，滑点按真实盘口算，账本记的就是「如果真跟会怎样」。注意纸面结果略偏乐观（没有排队竞争、你的单不推动价格）：纸面亏的实盘一定亏，纸面小赚的未必赚。市场结算后对账线程会按结算价 1.00/0.00 自动入账清仓（`auto_settle_resolved`），持仓和盈亏不需要手工维护。
 
 **实盘边界**：
 
 - 下单响应不含逐档成交明细，持仓以定期对账为准，当日亏损熔断在实盘是近似值——务必同时设好敞口上限
-- 市场结算后引擎提醒「可赎回」，但不自动发链上 redeem 交易，去 Polymarket 页面点一下
-- 短窗口内的分批建仓暂不聚合，每笔独立跟单
+- 市场结算后引擎提醒「可赎回」，但不自动发链上 redeem 交易（那是一笔要 gas 的链上操作），去 Polymarket 页面点一下；纸面模式则已自动入账
 - EOA 首次交易需要先对交易所合约做 USDC/CTF 授权并备少量 POL；资金是 Polygon 上的 USDC.e
 
 ## 账本（sqlite）
 
 三张表，`report` 读的就是它们：
 
-- **signals**：每笔目标成交一行，`trade_key` 唯一约束提供重启幂等；`status` 记录归宿：`executed` / `filtered`（没过过滤）/ `skipped`（不值得下）/ `risk_blocked`（风控拦截）/ `no_fill`（限价内无对手盘）/ `error`
-- **orders**：每次执行一行：限价、请求量、成交量、均价、滑点、该单已实现盈亏
+- **signals**：每笔目标成交一行，`trade_key` 唯一约束提供重启幂等；`status` 记录归宿：`executed` / `filtered`（没过过滤）/ `skipped`（不值得下）/ `risk_blocked`（风控拦截）/ `no_fill`（限价内无对手盘）/ `netted`（轧差抵消）/ `error`。并单执行的一组信号共享一张订单，detail 里注明挂在哪个信号下
+- **orders**：每次执行一行：限价、请求量、成交量、均价、滑点、该单已实现盈亏；纸面自动结算记为 `REDEEM` / `settled`（signal_id=0，非信号驱动）
 - **positions**：当前持仓（份额、均价、累计已实现盈亏）；纸面由成交直接记账，实盘由对账快照覆盖
 
 `report` 输出示例：
@@ -301,7 +306,7 @@ polycopycat/
 ├── us/               # Polymarket US（美国合规站）
 │   ├── api.py        #   gateway 只读行情：markets / book / bbo / settlement / search
 │   └── match.py      #   主站市场 → US 市场的词面匹配打分
-tests/                # 144 个单测，全部离线（HTTP/WS 均为注入的假实现）
+tests/                # 158 个单测，全部离线（HTTP/WS 均为注入的假实现）
 config.example.json   # 引擎配置示例
 .claude/skills/verify # 端到端验证手册：本地 mock 全套接口驱动真实 CLI
 .github/workflows/    # 真实接口 CI：scout / smoke
@@ -313,7 +318,7 @@ scout-results/ 等     # CI 回写的评估 / 扫描 / 冒烟结果（json + txt
 
 ```bash
 pip install -e ".[dev]"
-pytest                # 144 个单测，无网络依赖，约 1s
+pytest                # 158 个单测，无网络依赖，约 1s
 ```
 
 端到端验证不打真实 API：用本地 mock（Data API + CLOB + WebSocket 都是标准库/websockets 起的假服务）驱动真实 CLI 子进程，逐场景断言输出与账本。具体流程和各命令的验证点写在 `.claude/skills/verify/SKILL.md`。实盘下单路径无法离线验证，上线前先小额实测。
@@ -331,7 +336,7 @@ negRisk 市场）、排行榜均已实测通过；纸面引擎在真实行情下
 拦截（403），`us` 子命令的解析逻辑按官方 SDK 契约实现并全部离线覆盖，
 真实入口通了之后再补冒烟。
 
-版本号在 `pyproject.toml` 与 `polycopycat/__init__.py`（当前 0.12.0），每交付一个里程碑 minor +1。
+版本号在 `pyproject.toml` 与 `polycopycat/__init__.py`（当前 0.13.0），每交付一个里程碑 minor +1。
 
 ## 状态 / Roadmap
 
@@ -343,8 +348,9 @@ negRisk 市场）、排行榜均已实测通过；纸面引擎在真实行情下
 - [x] scout：候选地址发现与战绩回放评分（排除做市/亏损/低样本地址）
 - [x] 套利扫描（站内互补对 + Kalshi 跨所）→ 已拆分至独立仓库 [polyArb](https://github.com/DonnyDing1999/polyArb)
 - [x] Polymarket US：gateway 只读行情 + 主站市场匹配（`us` 子命令）
+- [x] 跟单引擎 M3：信号聚合（分批建仓并单）、多目标轧差、纸面自动结算入账
 - [ ] Polymarket US 实盘执行器：官方 `polymarket-us` SDK 下单，把主站信号镜像到美国站（需 API key）
-- [ ] 信号聚合（分批建仓合并跟单）、自动 redeem、多目标信号轧差
+- [ ] 实盘链上自动 redeem（web3 直发 redeemPositions，需 gas 管理；纸面已自动入账）
 
 ## 风险提示
 

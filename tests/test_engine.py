@@ -47,6 +47,8 @@ def make_config(**overrides):
         "filters": {"min_target_notional_usdc": 20, "max_signal_age_s": 60},
         "risk": {"kill_switch_file": "", "max_market_exposure_usdc": 1000,
                  "max_total_exposure_usdc": 1000, "daily_max_loss_usdc": 1000},
+        # 本文件验证逐笔语义，聚合窗口显式关闭；聚合与轧差见 test_engine_m3.py
+        "aggregate": {"window_s": 0},
     }
     raw.update(overrides)
     return EngineConfig.from_dict(raw)
