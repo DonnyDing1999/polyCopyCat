@@ -94,6 +94,7 @@ polycopycat scout --targets-snippet --top 5
 polycopycat run --config copycat.json            # mode 由配置决定，默认 paper
 polycopycat run --config copycat.json --paper    # 保险丝：强制纸面
 polycopycat report --config copycat.json         # 或 report --ledger data/copycat.sqlite3
+polycopycat report --config copycat.json --by-target   # 按目标拆分：谁的跟单真赚钱
 ```
 
 引擎管道（每个环节的结论都落账本，可追溯）：
@@ -204,6 +205,8 @@ polycopycat report --config copycat.json         # 或 report --ledger data/copy
 - **orders**：每次执行一行：限价、请求量、成交量、均价、滑点、该单已实现盈亏；纸面自动结算记为 `REDEEM` / `settled`（signal_id=0，非信号驱动）
 - **positions**：当前持仓（份额、均价、累计已实现盈亏）；纸面由成交直接记账，实盘由对账快照覆盖
 
+**`report --by-target`**：跟多个目标时，按目标拆分「已实现盈亏 / 累计买入 / 执行占信号比（跟单率）/ 各状态信号数」，用来回答"这几个人里谁的纸面跟单真赚钱、谁的动作根本跟不上"。卖出跟随平仓的盈亏经 orders→signals 干净归到目标；市场结算入账的盈亏在持仓层（一个 token 可能多目标共建），单列成"未按目标归属"一桶，可归因 + 未归属 = 账本总盈亏。
+
 `report` 输出示例：
 
 ```
@@ -306,7 +309,7 @@ polycopycat/
 ├── us/               # Polymarket US（美国合规站）
 │   ├── api.py        #   gateway 只读行情：markets / book / bbo / settlement / search
 │   └── match.py      #   主站市场 → US 市场的词面匹配打分
-tests/                # 158 个单测，全部离线（HTTP/WS 均为注入的假实现）
+tests/                # 160 个单测，全部离线（HTTP/WS 均为注入的假实现）
 config.example.json   # 引擎配置示例
 .claude/skills/verify # 端到端验证手册：本地 mock 全套接口驱动真实 CLI
 .github/workflows/    # 真实接口 CI：scout / smoke
@@ -318,7 +321,7 @@ scout-results/ 等     # CI 回写的评估 / 扫描 / 冒烟结果（json + txt
 
 ```bash
 pip install -e ".[dev]"
-pytest                # 158 个单测，无网络依赖，约 1s
+pytest                # 160 个单测，无网络依赖，约 1s
 ```
 
 端到端验证不打真实 API：用本地 mock（Data API + CLOB + WebSocket 都是标准库/websockets 起的假服务）驱动真实 CLI 子进程，逐场景断言输出与账本。具体流程和各命令的验证点写在 `.claude/skills/verify/SKILL.md`。实盘下单路径无法离线验证，上线前先小额实测。
@@ -336,7 +339,7 @@ negRisk 市场）、排行榜均已实测通过；纸面引擎在真实行情下
 拦截（403），`us` 子命令的解析逻辑按官方 SDK 契约实现并全部离线覆盖，
 真实入口通了之后再补冒烟。
 
-版本号在 `pyproject.toml` 与 `polycopycat/__init__.py`（当前 0.13.0），每交付一个里程碑 minor +1。
+版本号在 `pyproject.toml` 与 `polycopycat/__init__.py`（当前 0.14.0），每交付一个里程碑 minor +1。
 
 ## 状态 / Roadmap
 
@@ -349,6 +352,7 @@ negRisk 市场）、排行榜均已实测通过；纸面引擎在真实行情下
 - [x] 套利扫描（站内互补对 + Kalshi 跨所）→ 已拆分至独立仓库 [polyArb](https://github.com/DonnyDing1999/polyArb)
 - [x] Polymarket US：gateway 只读行情 + 主站市场匹配（`us` 子命令）
 - [x] 跟单引擎 M3：信号聚合（分批建仓并单）、多目标轧差、纸面自动结算入账
+- [x] `report --by-target`：按目标拆分盈亏与信号归属，评估多目标里谁值得真金白银跟
 - [ ] Polymarket US 实盘执行器：官方 `polymarket-us` SDK 下单，把主站信号镜像到美国站（需 API key）
 - [ ] 实盘链上自动 redeem（web3 直发 redeemPositions，需 gas 管理；纸面已自动入账）
 

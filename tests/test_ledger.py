@@ -109,3 +109,76 @@ def test_live_submitted_does_not_touch_positions(ledger):
                         filled_size=0, avg_price=0, apply_fill=False)
     assert ledger.positions() == []
     assert len(ledger.recent_orders()) == 1
+
+
+# ---- 按目标归因（report --by-target 的数据层）----
+
+def _signal(ledger, tx, wallet, side="BUY", token="tok1", cond="0xcond",
+            size=100.0, price=0.5, status="executed"):
+    trade = Trade(
+        proxy_wallet=wallet, side=side, asset=token, condition_id=cond,
+        size=size, price=price, timestamp=int(time.time()), title="T", outcome="Yes",
+        transaction_hash=tx,
+    )
+    sig = Signal(trade=trade, target=TargetConfig(address=wallet), received_at=time.time())
+    sid, _ = ledger.record_signal(sig)
+    ledger.update_signal(sid, status)
+    return sid
+
+
+def test_report_by_target_attributes_pnl_and_counts(ledger):
+    a = "0x" + "a" * 40
+    b = "0x" + "b" * 40
+    # A：买入建仓 + 卖出平仓（实现 +盈亏），外加一条被过滤的信号
+    sid_a_buy = _signal(ledger, "0xa1", a, side="BUY", size=100, price=0.50)
+    ledger.record_order(sid_a_buy, intent(side="BUY", size=100, limit=0.50),
+                        mode="paper", status="filled", filled_size=100, avg_price=0.50)
+    sid_a_sell = _signal(ledger, "0xa2", a, side="SELL", size=100, price=0.60)
+    ledger.record_order(sid_a_sell, intent(side="SELL", size=100, limit=0.60),
+                        mode="paper", status="filled", filled_size=100, avg_price=0.60)
+    _signal(ledger, "0xa3", a, size=5, price=0.5, status="filtered")
+    # B：只买入未平仓，另有一条 netted
+    sid_b_buy = _signal(ledger, "0xb1", b, side="BUY", size=80, price=0.40)
+    ledger.record_order(sid_b_buy, intent(side="BUY", token="tok2", size=80, limit=0.40),
+                        mode="paper", status="filled", filled_size=80, avg_price=0.40)
+    _signal(ledger, "0xb2", b, side="BUY", status="netted")
+
+    reports, settle_pnl, settle_n = ledger.report_by_target()
+    assert settle_pnl == 0 and settle_n == 0
+    by = {r.target: r for r in reports}
+    assert reports[0].target == a  # A 有 +10 盈亏，排在前
+
+    ra = by[a]
+    assert abs(ra.realized_pnl - 10.0) < 1e-9      # 100 × (0.60 - 0.50)
+    assert abs(ra.bought_notional - 50.0) < 1e-9   # 100 × 0.50（只算买入腿）
+    assert ra.executed == 2 and ra.filtered == 1
+    assert ra.total_signals == 3
+    assert abs(ra.followable_ratio - 2 / 3) < 1e-9
+
+    rb = by[b]
+    assert rb.realized_pnl == 0.0
+    assert abs(rb.bought_notional - 32.0) < 1e-9   # 80 × 0.40
+    assert rb.executed == 1 and rb.netted == 1
+
+
+def test_report_by_target_buckets_settlement_separately(ledger):
+    a = "0x" + "a" * 40
+    sid = _signal(ledger, "0xa1", a, side="BUY", size=100, price=0.50)
+    ledger.record_order(sid, intent(side="BUY", size=100, limit=0.50),
+                        mode="paper", status="filled", filled_size=100, avg_price=0.50)
+    # 市场结算赢：settle_position 写 signal_id=0 的 REDEEM 订单
+    realized = ledger.settle_position("tok1", 1.0, mode="paper")
+    assert abs(realized - 50.0) < 1e-9  # 100 × (1.0 - 0.50)
+
+    reports, settle_pnl, settle_n = ledger.report_by_target()
+    assert settle_n == 1
+    assert abs(settle_pnl - 50.0) < 1e-9
+    # 结算盈亏不算进目标 A 的可归因盈亏（signal_id=0 不 join）
+    assert reports[0].target == a and reports[0].realized_pnl == 0.0
+    # 但总账仍然对得上：可归因 + 未归属 = 全部
+    assert abs(ledger.realized_pnl_total() - 50.0) < 1e-9
+
+
+def test_report_by_target_empty(ledger):
+    reports, settle_pnl, settle_n = ledger.report_by_target()
+    assert reports == [] and settle_pnl == 0 and settle_n == 0

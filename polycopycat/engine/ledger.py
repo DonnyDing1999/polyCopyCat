@@ -87,6 +87,35 @@ class PositionRow:
         return self.size * self.avg_cost
 
 
+@dataclass(frozen=True)
+class TargetReport:
+    """单个目标的跟单归因：信号归属 + 可归因的已实现盈亏。"""
+
+    target: str
+    executed: int = 0
+    filtered: int = 0
+    skipped: int = 0
+    risk_blocked: int = 0
+    netted: int = 0
+    no_fill: int = 0
+    other: int = 0            # received/error 等其余状态
+    bought_notional: float = 0.0   # 跟随该目标累计买入金额（下过的注）
+    realized_pnl: float = 0.0      # 可归因的已实现盈亏（卖出跟随平掉的部分）
+
+    @property
+    def total_signals(self) -> int:
+        return (
+            self.executed + self.filtered + self.skipped
+            + self.risk_blocked + self.netted + self.no_fill + self.other
+        )
+
+    @property
+    def followable_ratio(self) -> float:
+        """执行占信号总数的比例：这个目标有多少动作真的跟得上。"""
+        total = self.total_signals
+        return self.executed / total if total else 0.0
+
+
 class Ledger:
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
@@ -338,3 +367,56 @@ class Ledger:
             "SELECT status, COUNT(*) AS n FROM signals GROUP BY status"
         ).fetchall()
         return {r["status"]: r["n"] for r in rows}
+
+    def report_by_target(self) -> tuple[list[TargetReport], float, int]:
+        """按目标拆分：每个目标的信号归属 + 可归因已实现盈亏。
+
+        返回 (每目标报告[按已实现盈亏降序], 未归属结算盈亏, 结算订单数)。
+        卖出跟随的盈亏经 orders→signals 干净归到目标；市场结算入账的订单
+        是 signal_id=0（持仓层，可能多目标共建），无法拆分，单列返回。
+        """
+        _KNOWN = {"executed", "filtered", "skipped", "risk_blocked", "netted", "no_fill"}
+        with self._lock:
+            sig_rows = self._conn.execute(
+                "SELECT target, status, COUNT(*) AS n FROM signals GROUP BY target, status"
+            ).fetchall()
+            ord_rows = self._conn.execute(
+                """SELECT s.target AS target,
+                          COALESCE(SUM(o.realized_pnl), 0) AS realized,
+                          COALESCE(SUM(CASE WHEN o.side = 'BUY' THEN o.notional ELSE 0 END), 0)
+                            AS bought
+                   FROM orders o JOIN signals s ON o.signal_id = s.id
+                   GROUP BY s.target"""
+            ).fetchall()
+            settle = self._conn.execute(
+                "SELECT COALESCE(SUM(realized_pnl), 0) AS pnl, COUNT(*) AS n "
+                "FROM orders WHERE signal_id = 0"
+            ).fetchone()
+
+        agg: dict[str, dict] = {}
+        for r in sig_rows:
+            bucket = agg.setdefault(r["target"], {"counts": {}, "bought": 0.0, "realized": 0.0})
+            bucket["counts"][r["status"]] = r["n"]
+        for r in ord_rows:
+            bucket = agg.setdefault(r["target"], {"counts": {}, "bought": 0.0, "realized": 0.0})
+            bucket["bought"] = r["bought"]
+            bucket["realized"] = r["realized"]
+
+        reports: list[TargetReport] = []
+        for target, bucket in agg.items():
+            counts = bucket["counts"]
+            other = sum(n for st, n in counts.items() if st not in _KNOWN)
+            reports.append(TargetReport(
+                target=target,
+                executed=counts.get("executed", 0),
+                filtered=counts.get("filtered", 0),
+                skipped=counts.get("skipped", 0),
+                risk_blocked=counts.get("risk_blocked", 0),
+                netted=counts.get("netted", 0),
+                no_fill=counts.get("no_fill", 0),
+                other=other,
+                bought_notional=bucket["bought"],
+                realized_pnl=bucket["realized"],
+            ))
+        reports.sort(key=lambda t: (t.realized_pnl, t.bought_notional), reverse=True)
+        return reports, settle["pnl"], settle["n"]

@@ -299,6 +299,9 @@ def cmd_report(args: argparse.Namespace) -> int:
                 f"  {p.size:>10.2f} 份 @ {p.avg_cost:.3f}  成本 ${p.cost:>8.2f}  "
                 f"已实现 ${p.realized_pnl:+8.2f}  [{p.outcome}] {p.title}"
             )
+        if args.by_target:
+            _print_by_target(ledger)
+
         print(f"\n## 最近订单（最多 {args.limit} 条）")
         rows = ledger.recent_orders(args.limit)
         if not rows:
@@ -313,6 +316,33 @@ def cmd_report(args: argparse.Namespace) -> int:
     finally:
         ledger.close()
     return 0
+
+
+def _print_by_target(ledger) -> None:
+    """按目标归因：谁的纸面跟单真赚钱、谁的动作跟得上。"""
+    reports, settle_pnl, settle_n = ledger.report_by_target()
+    print(f"\n## 按目标归因（{len(reports)} 个目标）")
+    if not reports:
+        print("（暂无信号）")
+    else:
+        print(
+            f"  {'目标':<14} {'已实现':>10}  {'累计买入':>10}  "
+            f"{'执行/信号':>11}  {'跟单率':>6}  过滤/跳过/风控/轧差/无对手"
+        )
+        for t in reports:
+            print(
+                f"  {_short(t.target):<14} ${t.realized_pnl:>+9.2f}  ${t.bought_notional:>9.2f}  "
+                f"{t.executed:>5}/{t.total_signals:<5}  {t.followable_ratio:>5.0%}  "
+                f"{t.filtered}/{t.skipped}/{t.risk_blocked}/{t.netted}/{t.no_fill}"
+            )
+    if settle_n:
+        print(
+            f"\n  未按目标归属（市场结算入账）: ${settle_pnl:+.2f}（{settle_n} 笔 REDEEM）"
+        )
+    print(
+        "  说明：卖出跟随平仓的盈亏已按目标归属；结算盈亏在持仓层入账"
+        "（一个 token 可能多目标共建），不拆分到单个目标。"
+    )
 
 
 def _us_client(args: argparse.Namespace):
@@ -573,6 +603,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_report.add_argument("--config", default="copycat.json", help="引擎配置文件路径")
     p_report.add_argument("--ledger", default=None, help="直接指定账本 sqlite 路径（优先于 --config）")
     p_report.add_argument("--limit", type=int, default=20, help="最近订单条数（默认 20）")
+    p_report.add_argument(
+        "--by-target", action="store_true",
+        help="按目标拆分：每个目标的已实现盈亏、累计买入、信号归属（评估谁值得跟）",
+    )
     p_report.set_defaults(func=cmd_report)
 
     p_us = sub.add_parser(
