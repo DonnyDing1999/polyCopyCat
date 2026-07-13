@@ -229,9 +229,19 @@ class CopyEngine:
             trade=trade, target=group.target, received_at=group.earliest_received
         )
         if trade.side == "BUY":
-            intent, reason = plan_buy(merged_signal, market, self.config.sizing, self.config.execution)
+            book = None
+            if self.config.sizing.depth_aware:
+                try:
+                    book = self._clob.get_book(trade.asset)
+                except ClobError as exc:
+                    logger.debug("深度封顶取订单簿失败，退回按 ratio 定量: %s", exc)
+            intent, reason = plan_buy(
+                merged_signal, market, self.config.sizing, self.config.execution, book=book
+            )
             if intent is not None and group.count > 1:
-                intent = dataclasses.replace(intent, note=f"并单 {group.count} 笔")
+                merge_note = f"并单 {group.count} 笔"
+                note = f"{intent.note}，{merge_note}" if intent.note else merge_note
+                intent = dataclasses.replace(intent, note=note)
         else:
             intent, reason = self._plan_sell(merged_signal, market, group.prev_target_size)
             if intent is not None and group.count > 1:

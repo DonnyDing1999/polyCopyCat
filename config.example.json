@@ -13,7 +13,9 @@
     "mode": "proportional",
     "ratio": 0.1,
     "fixed_usdc": 20,
-    "max_per_trade_usdc": 100
+    "max_per_trade_usdc": 100,
+    "depth_aware": false,
+    "max_follow_multiple": 1.0
   },
   "filters": {
     "min_target_notional_usdc": 50,

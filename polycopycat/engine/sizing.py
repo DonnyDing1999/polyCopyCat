@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import math
 
-from .clob import MarketInfo
+from .clob import MarketInfo, OrderBook
 from .config import ExecutionConfig, SizingConfig
+from .depth import depth_capped_notional
 from .signals import OrderIntent, Signal
 
 # CLOB 份额精度：两位小数
@@ -40,8 +41,15 @@ def plan_buy(
     market: MarketInfo,
     sizing: SizingConfig,
     execution: ExecutionConfig,
+    *,
+    book: OrderBook | None = None,
 ) -> tuple[OrderIntent | None, str]:
-    """把目标买入换算成自己的买入意图；不值得下的返回 (None, 原因)。"""
+    """把目标买入换算成自己的买入意图；不值得下的返回 (None, 原因)。
+
+    depth_aware 且传入 book 时：先按 max_follow_multiple 放大基准金额（想吃
+    更大的本），再用盘口在限价内的容量封顶（吃不下的不下），最后仍受
+    单笔上限约束。这样书深就放大、书浅就自动缩到能成交的量。
+    """
     trade = signal.trade
     ratio = signal.target.ratio if signal.target.ratio is not None else sizing.ratio
     cap = sizing.max_per_trade_usdc
@@ -49,14 +57,29 @@ def plan_buy(
         cap = min(cap, signal.target.max_per_trade_usdc)
 
     if sizing.mode == "fixed":
-        notional = sizing.fixed_usdc
+        base_notional = sizing.fixed_usdc
     else:
-        notional = trade.notional * ratio
-    notional = min(notional, cap)
+        base_notional = trade.notional * ratio
 
     limit = buy_limit_price(trade.price, market, execution)
     if limit <= 0:
         return None, "限价计算结果非法"
+
+    note = ""
+    if sizing.depth_aware and book is not None:
+        desired = base_notional * sizing.max_follow_multiple
+        capped, capacity = depth_capped_notional(desired, book, "BUY", limit)
+        if capacity <= 0:
+            return None, f"限价 {limit:.3f} 内无盘口深度（滑点保护，跟不了）"
+        notional = min(capped, cap)
+        util = notional / capacity if capacity > 0 else 0.0
+        if notional > base_notional + 1e-9:
+            note = f"深度放大 {notional / base_notional:.1f}×（吃盘口容量 ${capacity:.0f} 的 {util:.0%}）"
+        elif notional < base_notional - 1e-9:
+            note = f"深度封顶（盘口容量仅 ${capacity:.0f}，吃 {util:.0%}）"
+    else:
+        notional = min(base_notional, cap)
+
     size = floor_to(notional / limit, SIZE_STEP)
     if size < market.min_size:
         return None, (
@@ -75,6 +98,7 @@ def plan_buy(
             tick_size=market.tick_size,
             title=trade.title,
             outcome=trade.outcome,
+            note=note,
         ),
         "",
     )

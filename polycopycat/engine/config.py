@@ -69,6 +69,8 @@ class SizingConfig:
     ratio: float = 0.1
     fixed_usdc: float = 20.0
     max_per_trade_usdc: float = 100.0
+    depth_aware: bool = False       # 买入时按盘口深度封顶（并可放大），见 depth.py
+    max_follow_multiple: float = 1.0  # 深度放大上限：基准量最多顶到几倍（1=只封顶不放大）
 
     def __post_init__(self) -> None:
         if self.mode not in ("proportional", "fixed"):
@@ -78,6 +80,15 @@ class SizingConfig:
         self.max_per_trade_usdc = _positive(
             "sizing.max_per_trade_usdc", self.max_per_trade_usdc, allow_none=False
         )
+        self.depth_aware = bool(self.depth_aware)
+        self.max_follow_multiple = _positive(
+            "sizing.max_follow_multiple", self.max_follow_multiple, allow_none=False
+        )
+        if self.max_follow_multiple < 1.0:
+            raise ConfigError(
+                f"sizing.max_follow_multiple={self.max_follow_multiple} 应 ≥ 1"
+                "（<1 是缩量，用 ratio 表达）"
+            )
 
 
 @dataclass
