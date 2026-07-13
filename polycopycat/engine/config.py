@@ -39,7 +39,8 @@ def _build(cls, raw: dict[str, Any], section: str):
     if not isinstance(raw, dict):
         raise ConfigError(f"{section} 应为对象，实际是 {type(raw).__name__}")
     known = {f.name for f in fields(cls)}
-    unknown = set(raw) - known
+    # 下划线开头的键当注释用（如 _note），静默忽略；其余未知键才警告（防手滑）
+    unknown = {k for k in raw if k not in known and not k.startswith("_")}
     if unknown:
         logger.warning("配置 %s 中有未知字段将被忽略: %s", section, ", ".join(sorted(unknown)))
     return cls(**{k: v for k, v in raw.items() if k in known})
@@ -262,7 +263,7 @@ class EngineConfig:
             if name in data:
                 kwargs[name] = _build(section_cls, data.pop(name), name)
         known = {f.name for f in fields(cls)}
-        unknown = set(data) - known
+        unknown = {k for k in data if k not in known and not k.startswith("_")}
         if unknown:
             logger.warning("配置顶层有未知字段将被忽略: %s", ", ".join(sorted(unknown)))
         kwargs.update({k: v for k, v in data.items() if k in known})
