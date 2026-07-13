@@ -60,7 +60,7 @@ polycopycat report --config copycat.json
 | `trades <地址>` | 一次性读取某地址最近成交（新→旧） |
 | `watch <地址...>` | 持续监控多个地址的新成交（轮询或 `--stream` 实时） |
 | `scout [地址...]` | 寻找值得跟单的地址：回放战绩、排除做市/亏损地址 |
-| `run --config <文件>` | 启动跟单引擎（纸面/实盘由配置决定） |
+| `run --config <文件>` | 启动跟单引擎（先自检 Data API/CLOB 可达性，纸面/实盘由配置决定） |
 | `report` | 查看账本：信号统计、持仓、盈亏、最近订单 |
 | `us <子命令>` | Polymarket US（美国合规站）行情与匹配：markets / book / bbo / match |
 
@@ -327,7 +327,7 @@ polycopycat/
 ├── us/               # Polymarket US（美国合规站）
 │   ├── api.py        #   gateway 只读行情：markets / book / bbo / settlement / search
 │   └── match.py      #   主站市场 → US 市场的词面匹配打分
-tests/                # 175 个单测，全部离线（HTTP/WS 均为注入的假实现）
+tests/                # 185 个单测，全部离线（HTTP/WS 均为注入的假实现）
 config.example.json   # 引擎配置示例
 .claude/skills/verify # 端到端验证手册：本地 mock 全套接口驱动真实 CLI
 .github/workflows/    # 真实接口 CI：scout / smoke
@@ -339,7 +339,7 @@ scout-results/ 等     # CI 回写的评估 / 扫描 / 冒烟结果（json + txt
 
 ```bash
 pip install -e ".[dev]"
-pytest                # 175 个单测，无网络依赖，约 1s
+pytest                # 185 个单测，无网络依赖，约 1s
 ```
 
 端到端验证不打真实 API：用本地 mock（Data API + CLOB + WebSocket 都是标准库/websockets 起的假服务）驱动真实 CLI 子进程，逐场景断言输出与账本。具体流程和各命令的验证点写在 `.claude/skills/verify/SKILL.md`。实盘下单路径无法离线验证，上线前先小额实测。
@@ -357,7 +357,7 @@ negRisk 市场）、排行榜均已实测通过；纸面引擎在真实行情下
 拦截（403），`us` 子命令的解析逻辑按官方 SDK 契约实现并全部离线覆盖，
 真实入口通了之后再补冒烟。
 
-版本号在 `pyproject.toml` 与 `polycopycat/__init__.py`（当前 0.16.1），每交付一个里程碑 minor +1。
+版本号在 `pyproject.toml` 与 `polycopycat/__init__.py`（当前 0.17.0），每交付一个里程碑 minor +1。
 
 ## 状态 / Roadmap
 

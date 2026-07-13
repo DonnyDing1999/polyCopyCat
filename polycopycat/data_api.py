@@ -146,6 +146,14 @@ class DataApiClient:
             raise DataApiError(f"预期 /positions 返回列表，实际是: {data!r:.200}")
         return [Position.from_api(item) for item in data if isinstance(item, dict)]
 
+    def ping(self) -> tuple[bool, str]:
+        """启动自检：探测 Data API 是否可达（走真实的成交查询路径）。"""
+        try:
+            self._get("/trades", {"limit": 1, "takerOnly": "true"})
+            return True, "可达"
+        except HttpError as exc:
+            return False, str(exc)
+
     def _get(self, path: str, params: dict[str, Any]) -> Any:
         try:
             return get_json(

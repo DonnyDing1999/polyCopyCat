@@ -190,6 +190,40 @@ def cmd_scout(args: argparse.Namespace) -> int:
     return 0
 
 
+def _preflight_lines(
+    data_ok: bool, data_msg: str, clob_ok: bool, clob_msg: str
+) -> list[str]:
+    """把自检结果格式化成给用户看的行（纯函数，便于测试）。"""
+    lines = [
+        "启动自检：探测依赖接口……",
+        f"  Data API: {'✓ ' if data_ok else '✗ '}{data_msg}",
+        f"  CLOB:     {'✓ ' if clob_ok else '✗ '}{clob_msg}",
+    ]
+    if not clob_ok:
+        lines.append(
+            "⚠️  CLOB 不可达 → 引擎拿不到市场元数据/订单簿，任何信号都无法执行"
+            "（会记为 error）。"
+        )
+        lines.append(
+            "    多为公司网关/地区策略封了 clob.polymarket.com；"
+            "换云服务器或不拦截的网络（手机热点）再跑。"
+        )
+    if not data_ok:
+        lines.append("⚠️  Data API 不可达 → 拿不到成交/持仓，监控与跟单都起不来。")
+    if data_ok and clob_ok:
+        lines.append("  依赖接口就绪。实时流状态见后续日志「实时成交流已连接」。")
+    return lines
+
+
+def run_preflight(data_client, clob) -> tuple[bool, bool]:
+    """探测 Data API 与 CLOB，打印自检结果，返回 (data_ok, clob_ok)。"""
+    data_ok, data_msg = data_client.ping()
+    clob_ok, clob_msg = clob.ping()
+    for line in _preflight_lines(data_ok, data_msg, clob_ok, clob_msg):
+        print(line, file=sys.stderr)
+    return data_ok, clob_ok
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from .engine.clob import ClobReadClient
     from .engine.config import ConfigError, load_config
@@ -209,6 +243,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     data_client = DataApiClient(base_url=args.base_url or config.data_api_url)
     clob = ClobReadClient(base_url=args.clob_url or config.clob_url)
+    if not args.skip_preflight:
+        run_preflight(data_client, clob)
     ledger = Ledger(config.ledger_path)
     notifier = build_notifier(config.notify)
     own_address = None
@@ -586,6 +622,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument(
         "--paper", action="store_true",
         help="强制纸面模式（覆盖配置里的 mode，实盘前的保险丝）",
+    )
+    p_run.add_argument(
+        "--skip-preflight", action="store_true",
+        help="跳过启动自检（默认会先探 Data API / CLOB 是否可达）",
     )
     p_run.add_argument(
         "--ws-url", default=None,

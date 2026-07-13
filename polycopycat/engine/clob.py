@@ -131,6 +131,28 @@ class ClobReadClient:
         self.backoff = backoff
         self._market_cache: dict[str, tuple[float, MarketInfo]] = {}
 
+    def ping(self) -> tuple[bool, str]:
+        """启动自检：探测 CLOB 是否可达，区分「正常可达」与「被拦截」。
+
+        引擎离不开 CLOB（市场元数据 + 订单簿），而它常被公司网关/地区
+        策略单独封掉（返回 403 + HTML 拦截页）。返回 (是否可达, 说明)。
+        """
+        try:
+            r = self._session.get(f"{self.base_url}/ok", timeout=min(self.timeout, 8))
+        except requests.RequestException as exc:
+            return False, f"连接失败（{exc.__class__.__name__}）"
+        headers = getattr(r, "headers", {}) or {}
+        ctype = str(headers.get("content-type", "")).lower()
+        if r.status_code in (401, 403, 407, 451) and "html" in ctype:
+            server = headers.get("Server") or headers.get("server") or ""
+            hint = f"（网关 {server}）" if server else ""
+            return False, (
+                f"被拦截 HTTP {r.status_code}{hint}——疑似网络/公司网关/地区策略封了 clob 域"
+            )
+        if r.status_code >= 500:
+            return False, f"服务端错误 HTTP {r.status_code}"
+        return True, f"可达（HTTP {r.status_code}）"
+
     def get_market(self, condition_id: str, *, fresh: bool = False) -> MarketInfo:
         """fresh=True 跳过缓存直查（结算检查用：缓存里的市场可能刚刚关闭）。"""
         cached = self._market_cache.get(condition_id)
