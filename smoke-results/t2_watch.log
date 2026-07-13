@@ -1,36 +1,171 @@
-2026-07-12 07:08:39,542 INFO polycopycat.watcher: 开始监控 3 个地址，每 60.0 秒轮询一次: 0xeebde7a0e019a63e6b476eb425505b7b3e6eba30, 0xcd47de69aa50e406b009127881df516d1ccc5ee7, 0xc97ec8059025a28f61666d5202292c858b2809ab
-2026-07-12 07:08:39,543 DEBUG urllib3.connectionpool: Starting new HTTPS connection (1): data-api.polymarket.com:443
-2026-07-12 07:08:39,753 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xeebde7a0e019a63e6b476eb425505b7b3e6eba30&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
-2026-07-12 07:08:39,755 INFO polycopycat.watcher: 0xeebde7a0e019a63e6b476eb425505b7b3e6eba30 基线建立完成，已缓存最近 100 条成交
-2026-07-12 07:08:39,947 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xcd47de69aa50e406b009127881df516d1ccc5ee7&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
-2026-07-12 07:08:39,949 INFO polycopycat.watcher: 0xcd47de69aa50e406b009127881df516d1ccc5ee7 基线建立完成，已缓存最近 100 条成交
-2026-07-12 07:08:40,072 INFO websocket: Websocket connected
-2026-07-12 07:08:40,073 INFO polycopycat.stream: 实时成交流已连接: wss://ws-live-data.polymarket.com
-2026-07-12 07:08:40,250 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xc97ec8059025a28f61666d5202292c858b2809ab&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
-2026-07-12 07:08:40,253 INFO polycopycat.watcher: 0xc97ec8059025a28f61666d5202292c858b2809ab 基线建立完成，已缓存最近 100 条成交
-2026-07-12T07:03:32Z  0xcd47…5ee7  BUY      115.00 @ 0.999     $114.89  [No] Bitcoin above 64,800 on July 12, 4AM ET?  tx 0x6b92…bb1d
-2026-07-12T07:06:02Z  0xc97e…09ab  BUY        5.00 @ 0.999       $5.00  [No] Will the highest temperature in Atlanta be between 74-75°F on July 13?  tx 0x10e9…e472
-2026-07-12T07:07:14Z  0xeebd…ba30  BUY        5.00 @ 0.350       $1.75  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x3239…ba15
-2026-07-12T07:08:44Z  0xeebd…ba30  BUY        9.00 @ 0.170       $1.53  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x2f02…05c3
-2026-07-12T07:08:45Z  0xeebd…ba30  BUY       16.66 @ 0.114       $1.90  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x6bc5…f13b
-2026-07-12T07:08:52Z  0xeebd…ba30  BUY        5.68 @ 0.120       $0.68  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0xd980…e856
-2026-07-12T07:08:53Z  0xeebd…ba30  BUY       11.36 @ 0.120       $1.36  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x1be3…59af
-2026-07-12T07:08:53Z  0xeebd…ba30  BUY        3.41 @ 0.120       $0.41  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0xf489…f36f
-2026-07-12T07:08:53Z  0xeebd…ba30  BUY        1.14 @ 0.120       $0.14  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x7778…e319
-2026-07-12T07:08:53Z  0xeebd…ba30  BUY        1.14 @ 0.120       $0.14  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x9ec9…6235
-2026-07-12T07:08:53Z  0xeebd…ba30  BUY        5.68 @ 0.120       $0.68  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0xe62d…1810
-2026-07-12T07:08:53Z  0xeebd…ba30  BUY       11.36 @ 0.120       $1.36  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x5aee…050f
-2026-07-12T07:08:53Z  0xeebd…ba30  BUY        1.14 @ 0.120       $0.14  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x285a…fd6a
-2026-07-12T07:08:53Z  0xeebd…ba30  BUY        5.62 @ 0.120       $0.67  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0xfdcd…4bd3
-2026-07-12T07:08:53Z  0xeebd…ba30  BUY        2.27 @ 0.120       $0.27  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x8267…6938
-2026-07-12T07:08:55Z  0xeebd…ba30  BUY       29.48 @ 0.120       $3.54  [Down] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x089e…a2f6
-2026-07-12T07:09:07Z  0xeebd…ba30  BUY      344.00 @ 0.946     $325.57  [Up] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x3d2f…a21e
-2026-07-12T07:09:07Z  0xeebd…ba30  BUY       43.00 @ 0.950      $40.85  [Up] Bitcoin Up or Down - July 12, 3:05AM-3:10AM ET  tx 0x54b3…3c99
-2026-07-12 07:09:20,073 DEBUG websocket: Sending ping
-2026-07-12T07:09:38Z  0xc97e…09ab  BUY        5.00 @ 0.670       $3.35  [No] Will the highest temperature in Chengdu be 34°C on July 12?  tx 0x0286…6e77
-2026-07-12 07:09:39,555 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xeebde7a0e019a63e6b476eb425505b7b3e6eba30&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
-2026-07-12 07:09:39,569 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xcd47de69aa50e406b009127881df516d1ccc5ee7&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
-2026-07-12 07:09:39,582 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xc97ec8059025a28f61666d5202292c858b2809ab&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
-2026-07-12 07:09:40,073 DEBUG websocket: Sending ping
-2026-07-12 07:10:00,074 DEBUG websocket: Sending ping
+2026-07-13 04:01:41,520 INFO polycopycat.watcher: 开始监控 3 个地址，每 60.0 秒轮询一次: 0x20d2309cd92b797ae7ca175ed828ed8a27fbe29d, 0xdc8923aa7d6b293af2974c521092d0026ac37ac3, 0x344f3b43711f48770930ce731d934df3b2999dec
+2026-07-13 04:01:41,522 DEBUG urllib3.connectionpool: Starting new HTTPS connection (1): data-api.polymarket.com:443
+2026-07-13 04:01:41,589 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0x20d2309cd92b797ae7ca175ed828ed8a27fbe29d&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
+2026-07-13 04:01:41,592 INFO polycopycat.watcher: 0x20d2309cd92b797ae7ca175ed828ed8a27fbe29d 基线建立完成，已缓存最近 100 条成交
+2026-07-13 04:01:41,700 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xdc8923aa7d6b293af2974c521092d0026ac37ac3&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
+2026-07-13 04:01:41,702 INFO polycopycat.watcher: 0xdc8923aa7d6b293af2974c521092d0026ac37ac3 基线建立完成，已缓存最近 100 条成交
+2026-07-13 04:01:41,814 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0x344f3b43711f48770930ce731d934df3b2999dec&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
+2026-07-13 04:01:41,816 INFO polycopycat.watcher: 0x344f3b43711f48770930ce731d934df3b2999dec 基线建立完成，已缓存最近 100 条成交
+2026-07-13T03:58:08Z  0x20d2…e29d  BUY        8.14 @ 0.344       $2.80  [Up] XRP Up or Down - July 12, 11:55PM-12:00AM ET  tx 0x46e2…bdc5
+2026-07-13T03:58:11Z  0xdc89…7ac3  SELL       5.00 @ 0.680       $3.40  [Up] XRP Up or Down - July 12, 11:45PM-12:00AM ET  tx 0x3af2…21ef
+2026-07-13T03:59:35Z  0x344f…9dec  BUY        5.00 @ 0.890       $4.45  [Down] Bitcoin Up or Down - July 12, 11:45PM-12:00AM ET  tx 0xd319…d0f9
+2026-07-13 04:01:41,906 INFO websocket: Websocket connected
+2026-07-13 04:01:41,907 INFO polycopycat.stream: 实时成交流已连接: wss://ws-live-data.polymarket.com
+2026-07-13T04:01:47Z  0x20d2…e29d  SELL       2.00 @ 0.610       $1.22  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x05bc…ae63
+2026-07-13T04:01:48Z  0xdc89…7ac3  BUY        5.00 @ 0.200       $1.00  [Up] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xcea7…34db
+2026-07-13T04:01:53Z  0xdc89…7ac3  SELL       8.00 @ 0.420       $3.36  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xcddc…eadf
+2026-07-13T04:01:53Z  0xdc89…7ac3  BUY        6.00 @ 0.580       $3.48  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xcddc…eadf
+2026-07-13T04:01:57Z  0xdc89…7ac3  SELL       7.00 @ 0.550       $3.85  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x9dcb…d3ac
+2026-07-13T04:01:57Z  0xdc89…7ac3  BUY        6.00 @ 0.450       $2.70  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x95e4…60cf
+2026-07-13T04:02:06Z  0xdc89…7ac3  BUY        5.00 @ 0.430       $2.15  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x6d65…b4d0
+2026-07-13T04:02:06Z  0xdc89…7ac3  SELL       2.70 @ 0.550       $1.49  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x69e9…d984
+2026-07-13T04:02:10Z  0x20d2…e29d  BUY       55.14 @ 0.654      $36.08  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xda8b…e484
+2026-07-13T04:02:10Z  0x20d2…e29d  BUY        7.10 @ 0.680       $4.83  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xe922…cf0b
+2026-07-13T04:02:12Z  0xdc89…7ac3  BUY        7.00 @ 0.530       $3.71  [Up] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x0e12…cae2
+2026-07-13T04:02:12Z  0xdc89…7ac3  SELL       9.00 @ 0.470       $4.23  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x0e12…cae2
+2026-07-13T04:02:12Z  0xdc89…7ac3  SELL       7.00 @ 0.680       $4.76  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x57a5…a0ab
+2026-07-13T04:02:12Z  0xdc89…7ac3  BUY        5.00 @ 0.320       $1.60  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x57a5…a0ab
+2026-07-13T04:02:13Z  0xdc89…7ac3  SELL      12.00 @ 0.380       $4.56  [Up] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x1972…7e67
+2026-07-13T04:02:13Z  0xdc89…7ac3  SELL       5.00 @ 0.600       $3.00  [Down] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x93ba…ae4e
+2026-07-13T04:02:13Z  0xdc89…7ac3  SELL       3.30 @ 0.550       $1.81  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x2707…49e0
+2026-07-13T04:02:13Z  0x20d2…e29d  BUY        6.22 @ 0.550       $3.42  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x2707…49e0
+2026-07-13T04:02:15Z  0xdc89…7ac3  BUY       13.44 @ 0.580       $7.80  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x47bf…dcf4
+2026-07-13T04:02:15Z  0x20d2…e29d  BUY        5.46 @ 0.540       $2.95  [Down] Ethereum Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x175e…e4be
+2026-07-13T04:02:15Z  0x20d2…e29d  BUY        7.37 @ 0.570       $4.20  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x593e…262b
+2026-07-13T04:02:15Z  0x20d2…e29d  BUY        5.51 @ 0.590       $3.25  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xe98e…7222
+2026-07-13T04:02:15Z  0x20d2…e29d  BUY        5.00 @ 0.540       $2.70  [Down] Ethereum Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x9305…ca4a
+2026-07-13T04:02:15Z  0x20d2…e29d  BUY        5.08 @ 0.590       $3.00  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x686c…73de
+2026-07-13T04:02:15Z  0xdc89…7ac3  SELL       5.00 @ 0.430       $2.15  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xc95e…fc77
+2026-07-13T04:02:15Z  0xdc89…7ac3  BUY        8.00 @ 0.570       $4.56  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xc95e…fc77
+2026-07-13T04:02:17Z  0xdc89…7ac3  BUY        5.00 @ 0.400       $2.00  [Up] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xcfe1…a353
+2026-07-13T04:02:17Z  0xdc89…7ac3  SELL       2.00 @ 0.600       $1.20  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xcfe1…a353
+2026-07-13T04:02:17Z  0x20d2…e29d  SELL       2.00 @ 0.840       $1.68  [Down] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x95fb…5e52
+2026-07-13T04:02:20Z  0xdc89…7ac3  SELL       4.00 @ 0.600       $2.40  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x1370…2a4d
+2026-07-13 04:02:21,907 DEBUG websocket: Sending ping
+2026-07-13T04:02:22Z  0xdc89…7ac3  BUY        6.00 @ 0.330       $1.98  [Up] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x6668…49ef
+2026-07-13T04:02:26Z  0xdc89…7ac3  BUY        5.43 @ 0.681       $3.70  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xd38e…fd95
+2026-07-13T04:02:26Z  0xdc89…7ac3  SELL       5.00 @ 0.320       $1.60  [Up] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x4878…52ac
+2026-07-13T04:02:29Z  0x20d2…e29d  BUY        6.00 @ 0.500       $3.00  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x97fd…4f11
+2026-07-13T04:02:30Z  0x20d2…e29d  SELL       1.00 @ 0.370       $0.37  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x1da3…1f87
+2026-07-13T04:02:30Z  0xdc89…7ac3  BUY        5.40 @ 0.500       $2.70  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x41e3…6117
+2026-07-13T04:02:30Z  0x20d2…e29d  BUY       20.00 @ 0.500      $10.00  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x2fc7…72dd
+2026-07-13T04:02:30Z  0xdc89…7ac3  BUY       15.00 @ 0.630       $9.45  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xb1e3…0c3c
+2026-07-13T04:02:31Z  0x20d2…e29d  SELL      13.00 @ 0.710       $9.23  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xf14b…1488
+2026-07-13T04:02:30Z  0x20d2…e29d  SELL       2.00 @ 0.380       $0.76  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xe941…a860
+2026-07-13T04:02:33Z  0xdc89…7ac3  SELL       0.10 @ 0.940       $0.09  [Down] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x463a…6483
+2026-07-13T04:02:33Z  0xdc89…7ac3  BUY        5.00 @ 0.280       $1.40  [Up] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x1acb…9325
+2026-07-13T04:02:34Z  0xdc89…7ac3  SELL       4.73 @ 0.940       $4.45  [Down] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x7af5…b663
+2026-07-13T04:02:34Z  0xdc89…7ac3  SELL       5.00 @ 0.650       $3.25  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x16a0…1586
+2026-07-13T04:02:37Z  0xdc89…7ac3  SELL       1.90 @ 0.930       $1.77  [Down] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xccb1…2898
+2026-07-13T04:02:37Z  0xdc89…7ac3  SELL       7.00 @ 0.730       $5.11  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x0d0b…c573
+2026-07-13T04:02:37Z  0x20d2…e29d  SELL      76.00 @ 0.340      $25.84  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xba00…ea59
+2026-07-13T04:02:38Z  0xdc89…7ac3  SELL       5.00 @ 0.350       $1.75  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x9a67…d8ed
+2026-07-13T04:02:38Z  0x20d2…e29d  SELL      16.00 @ 0.340       $5.44  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x99fe…05eb
+2026-07-13T04:02:38Z  0xdc89…7ac3  SELL       5.00 @ 0.410       $2.05  [Up] Ethereum Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x2232…bc04
+2026-07-13T04:02:38Z  0xdc89…7ac3  BUY        5.00 @ 0.260       $1.30  [Up] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xbee8…c44a
+2026-07-13T04:02:39Z  0xdc89…7ac3  SELL       5.00 @ 0.340       $1.70  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x545c…398f
+2026-07-13T04:02:39Z  0xdc89…7ac3  BUY        6.00 @ 0.650       $3.90  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x5df5…b76e
+2026-07-13 04:02:41,535 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0x20d2309cd92b797ae7ca175ed828ed8a27fbe29d&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
+2026-07-13 04:02:41,553 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0xdc8923aa7d6b293af2974c521092d0026ac37ac3&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
+2026-07-13 04:02:41,567 DEBUG urllib3.connectionpool: https://data-api.polymarket.com:443 "GET /trades?user=0x344f3b43711f48770930ce731d934df3b2999dec&limit=100&offset=0&takerOnly=true HTTP/1.1" 200 None
+2026-07-13 04:02:41,908 DEBUG websocket: Sending ping
+2026-07-13T04:02:42Z  0xdc89…7ac3  SELL       5.00 @ 0.760       $3.80  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x3773…3126
+2026-07-13T04:02:42Z  0x20d2…e29d  BUY        2.53 @ 0.720       $1.82  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xdfef…1a61
+2026-07-13T04:02:42Z  0x20d2…e29d  BUY        6.32 @ 0.750       $4.74  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x6032…f0c7
+2026-07-13T04:02:42Z  0x20d2…e29d  BUY        6.08 @ 0.750       $4.56  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xf604…7133
+2026-07-13T04:02:42Z  0xdc89…7ac3  BUY        5.26 @ 0.580       $3.05  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:15AM ET  tx 0xb40d…e3d2
+2026-07-13T04:02:42Z  0xdc89…7ac3  SELL       5.00 @ 0.300       $1.50  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x5ef2…4bb1
+2026-07-13T04:02:42Z  0x20d2…e29d  SELL       1.00 @ 0.310       $0.31  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x092a…396a
+2026-07-13T04:02:42Z  0xdc89…7ac3  BUY        9.00 @ 0.730       $6.57  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xa680…4b13
+2026-07-13T04:02:44Z  0xdc89…7ac3  SELL       3.16 @ 0.940       $2.97  [Down] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x7fc3…35c8
+2026-07-13T04:02:44Z  0x20d2…e29d  BUY        6.24 @ 0.750       $4.68  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x4647…1b20
+2026-07-13T04:02:44Z  0x20d2…e29d  BUY        6.64 @ 0.750       $4.98  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x9a53…1a36
+2026-07-13T04:02:44Z  0x20d2…e29d  BUY        6.29 @ 0.620       $3.90  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x961e…35cf
+2026-07-13T04:02:44Z  0x20d2…e29d  BUY        6.00 @ 0.750       $4.50  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xa436…37bc
+2026-07-13T04:02:44Z  0xdc89…7ac3  SELL       3.09 @ 0.930       $2.87  [Down] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x7fc3…35c8
+2026-07-13T04:02:44Z  0xdc89…7ac3  SELL       7.00 @ 0.250       $1.75  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xfb01…58ec
+2026-07-13T04:02:45Z  0xdc89…7ac3  SELL       5.00 @ 0.360       $1.80  [Up] Ethereum Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x2e90…949c
+2026-07-13T04:02:45Z  0xdc89…7ac3  BUY        8.00 @ 0.850       $6.80  [Down] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x3737…4b5e
+2026-07-13T04:02:46Z  0xdc89…7ac3  BUY        5.00 @ 0.660       $3.30  [Down] Solana Up or Down - July 13, 12:00AM-12:15AM ET  tx 0xd7f3…3f76
+2026-07-13T04:02:46Z  0x20d2…e29d  SELL       1.00 @ 0.170       $0.17  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x3a2e…99b7
+2026-07-13T04:02:46Z  0xdc89…7ac3  BUY        5.38 @ 0.650       $3.50  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:15AM ET  tx 0xbb78…6a5c
+2026-07-13T04:02:46Z  0xdc89…7ac3  SELL       9.00 @ 0.150       $1.35  [Up] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x0baa…b1de
+2026-07-13T04:02:46Z  0xdc89…7ac3  BUY        6.43 @ 0.840       $5.40  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xf8e9…6f13
+2026-07-13T04:02:46Z  0xdc89…7ac3  SELL       8.00 @ 0.360       $2.88  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x2436…d51f
+2026-07-13T04:02:46Z  0x20d2…e29d  SELL       3.00 @ 0.140       $0.42  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x5c29…9a62
+2026-07-13T04:02:46Z  0x20d2…e29d  BUY        7.16 @ 0.870       $6.23  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x1ce3…c0a3
+2026-07-13T04:02:47Z  0xdc89…7ac3  BUY        5.00 @ 0.160       $0.80  [Up] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x5914…eaf1
+2026-07-13T04:02:47Z  0x20d2…e29d  BUY        7.00 @ 0.650       $4.55  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x2d53…7ea1
+2026-07-13T04:02:47Z  0xdc89…7ac3  SELL       1.12 @ 0.890       $1.00  [Down] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x0418…73af
+2026-07-13T04:02:47Z  0xdc89…7ac3  SELL       2.00 @ 0.840       $1.68  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x8908…416d
+2026-07-13T04:02:47Z  0x20d2…e29d  SELL       6.00 @ 0.820       $4.92  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x50d9…194a
+2026-07-13T04:02:47Z  0xdc89…7ac3  BUY        4.16 @ 0.180       $0.75  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x90aa…f42f
+2026-07-13T04:02:47Z  0xdc89…7ac3  SELL       3.00 @ 0.840       $2.52  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x854f…2cb8
+2026-07-13T04:02:47Z  0xdc89…7ac3  BUY        2.00 @ 0.160       $0.32  [Up] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x854f…2cb8
+2026-07-13T04:02:47Z  0xdc89…7ac3  SELL       5.00 @ 0.820       $4.10  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x6ef8…4eb4
+2026-07-13T04:02:47Z  0xdc89…7ac3  SELL       5.16 @ 0.820       $4.23  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x0e44…7fd9
+2026-07-13T04:02:47Z  0xdc89…7ac3  BUY        1.22 @ 0.180       $0.22  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xe89e…603c
+2026-07-13T04:02:47Z  0xdc89…7ac3  SELL       0.84 @ 0.820       $0.69  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x90aa…f42f
+2026-07-13T04:02:48Z  0xdc89…7ac3  BUY        0.62 @ 0.180       $0.11  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xc44f…64d1
+2026-07-13T04:02:48Z  0xdc89…7ac3  SELL       2.00 @ 0.820       $1.64  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x54a1…db6c
+2026-07-13T04:02:48Z  0xdc89…7ac3  BUY        1.09 @ 0.190       $0.21  [Up] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xf452…fd70
+2026-07-13T04:02:48Z  0x20d2…e29d  SELL       2.00 @ 0.940       $1.88  [Down] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x548c…2f1c
+2026-07-13T04:02:48Z  0x20d2…e29d  BUY       14.50 @ 0.180       $2.61  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x1f01…4503
+2026-07-13T04:02:48Z  0x20d2…e29d  BUY        5.24 @ 0.210       $1.10  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x9b6b…f9ee
+2026-07-13T04:02:49Z  0xdc89…7ac3  BUY        5.00 @ 0.940       $4.70  [Down] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x4e3b…0307
+2026-07-13T04:02:49Z  0xdc89…7ac3  BUY       10.00 @ 0.210       $2.10  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x8430…fef4
+2026-07-13T04:02:49Z  0xdc89…7ac3  SELL      10.00 @ 0.790       $7.90  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x8430…fef4
+2026-07-13T04:02:51Z  0xdc89…7ac3  BUY        1.56 @ 0.270       $0.42  [Up] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xe075…525f
+2026-07-13T04:02:51Z  0x20d2…e29d  BUY       16.00 @ 0.070       $1.12  [Up] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x141f…cf6b
+2026-07-13T04:02:51Z  0x20d2…e29d  BUY        8.31 @ 0.260       $2.16  [Up] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x1e8c…6c5e
+2026-07-13T04:02:52Z  0xdc89…7ac3  BUY        1.28 @ 0.220       $0.28  [Up] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x4d22…714d
+2026-07-13T04:02:55Z  0xdc89…7ac3  BUY        1.41 @ 0.290       $0.41  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x4aa9…6094
+2026-07-13T04:02:55Z  0xdc89…7ac3  BUY        2.82 @ 0.290       $0.82  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x83a1…8bb5
+2026-07-13T04:02:55Z  0xdc89…7ac3  BUY        0.36 @ 0.290       $0.10  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x2312…0af1
+2026-07-13T04:02:55Z  0xdc89…7ac3  BUY        1.41 @ 0.290       $0.41  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x3b22…d14c
+2026-07-13T04:02:55Z  0xdc89…7ac3  SELL       5.00 @ 0.710       $3.55  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x2312…0af1
+2026-07-13T04:02:57Z  0x20d2…e29d  SELL       4.00 @ 0.580       $2.32  [Down] Ethereum Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x18e3…3d20
+2026-07-13T04:02:58Z  0x20d2…e29d  BUY       24.00 @ 0.540      $12.96  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x0ab4…9707
+2026-07-13T04:02:58Z  0x20d2…e29d  BUY       11.00 @ 0.300       $3.30  [Up] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x240a…6160
+2026-07-13T04:02:58Z  0x20d2…e29d  SELL       7.16 @ 0.470       $3.37  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x150d…3a03
+2026-07-13T04:02:58Z  0x20d2…e29d  BUY        8.00 @ 0.390       $3.12  [Up] XRP Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x4446…f5a7
+2026-07-13T04:02:59Z  0xdc89…7ac3  SELL       0.40 @ 0.640       $0.26  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xfe17…9951
+2026-07-13T04:03:00Z  0xdc89…7ac3  BUY        2.40 @ 0.360       $0.86  [Up] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x2455…a514
+2026-07-13T04:03:00Z  0xdc89…7ac3  SELL       8.00 @ 0.540       $4.32  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x622b…245f
+2026-07-13T04:03:00Z  0xdc89…7ac3  BUY        5.60 @ 0.360       $2.02  [Up] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xfbf5…a92d
+2026-07-13T04:03:00Z  0xdc89…7ac3  BUY        5.36 @ 0.700       $3.75  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xd422…1cc7
+2026-07-13T04:03:00Z  0xdc89…7ac3  SELL       5.00 @ 0.300       $1.50  [Up] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xe507…9411
+2026-07-13T04:03:00Z  0xdc89…7ac3  SELL       6.00 @ 0.510       $3.06  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x0e32…690d
+2026-07-13T04:03:00Z  0xdc89…7ac3  BUY        7.00 @ 0.460       $3.22  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x622b…245f
+2026-07-13T04:03:00Z  0xdc89…7ac3  BUY        5.00 @ 0.450       $2.25  [Up] Ethereum Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x4d6d…aef3
+2026-07-13 04:03:01,908 DEBUG websocket: Sending ping
+2026-07-13T04:03:01Z  0xdc89…7ac3  BUY        5.00 @ 0.290       $1.45  [Up] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x3b8f…837a
+2026-07-13T04:03:02Z  0xdc89…7ac3  SELL       0.46 @ 0.520       $0.24  [Down] Solana Up or Down - July 13, 12:00AM-12:15AM ET  tx 0xf704…01ff
+2026-07-13T04:03:02Z  0xdc89…7ac3  BUY        8.00 @ 0.410       $3.28  [Up] XRP Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x0c06…c40f
+2026-07-13T04:03:02Z  0xdc89…7ac3  SELL       5.00 @ 0.590       $2.95  [Down] XRP Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x0c06…c40f
+2026-07-13T04:03:02Z  0xdc89…7ac3  BUY        2.94 @ 0.320       $0.94  [Up] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xbc82…c1a1
+2026-07-13T04:03:04Z  0xdc89…7ac3  BUY        2.05 @ 0.320       $0.66  [Up] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x7c29…2752
+2026-07-13T04:03:04Z  0xdc89…7ac3  BUY        5.00 @ 0.450       $2.25  [Up] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xd8c6…e883
+2026-07-13T04:03:04Z  0xdc89…7ac3  BUY       10.00 @ 0.500       $5.00  [Up] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xc7e4…89a7
+2026-07-13T04:03:05Z  0xdc89…7ac3  SELL       1.56 @ 0.640       $1.00  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xdd84…2508
+2026-07-13T04:03:05Z  0xdc89…7ac3  SELL       9.00 @ 0.680       $6.12  [Down] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x7c29…2752
+2026-07-13T04:03:05Z  0xdc89…7ac3  SELL      10.00 @ 0.500       $5.00  [Down] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xc7e4…89a7
+2026-07-13T04:03:05Z  0xdc89…7ac3  SELL      18.43 @ 0.640      $11.80  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x043a…7ec6
+2026-07-13T04:03:05Z  0x20d2…e29d  BUY        9.52 @ 0.550       $5.24  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x4bac…f2e1
+2026-07-13T04:03:05Z  0xdc89…7ac3  SELL      10.00 @ 0.630       $6.30  [Down] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x85b9…8e98
+2026-07-13T04:03:05Z  0xdc89…7ac3  BUY       10.38 @ 0.630       $6.54  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xffcd…4ba8
+2026-07-13T04:03:05Z  0xdc89…7ac3  BUY        4.62 @ 0.630       $2.91  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xcc45…e123
+2026-07-13T04:03:05Z  0xdc89…7ac3  BUY        8.00 @ 0.630       $5.04  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x89b9…8a57
+2026-07-13T04:03:07Z  0xdc89…7ac3  BUY        0.81 @ 0.400       $0.32  [Up] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x9b6c…f1ce
+2026-07-13T04:03:07Z  0xdc89…7ac3  BUY        5.19 @ 0.400       $2.08  [Up] XRP Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x32df…24da
+2026-07-13T04:03:07Z  0xdc89…7ac3  BUY        5.00 @ 0.460       $2.30  [Up] XRP Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x270f…16c9
+2026-07-13T04:03:07Z  0xdc89…7ac3  SELL       6.00 @ 0.610       $3.66  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xb53e…95ac
+2026-07-13T04:03:07Z  0x20d2…e29d  SELL       4.00 @ 0.600       $2.40  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x4bdf…ce5c
+2026-07-13T04:03:07Z  0xdc89…7ac3  SELL       5.00 @ 0.420       $2.10  [Down] Bitcoin Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x5a28…86f9
+2026-07-13T04:03:07Z  0xdc89…7ac3  SELL       5.00 @ 0.540       $2.70  [Down] XRP Up or Down - July 13, 12:00AM-12:15AM ET  tx 0x270f…16c9
+2026-07-13T04:03:07Z  0xdc89…7ac3  BUY        3.34 @ 0.430       $1.44  [Up] Ethereum Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x4a16…5c9e
+2026-07-13T04:03:09Z  0xdc89…7ac3  SELL       3.00 @ 0.450       $1.35  [Down] Solana Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xaf5b…eadb
+2026-07-13T04:03:09Z  0xdc89…7ac3  BUY        6.70 @ 0.560       $3.75  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0xfc06…a58e
+2026-07-13T04:03:09Z  0xdc89…7ac3  BUY        2.27 @ 0.560       $1.27  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x8e70…a700
+2026-07-13T04:03:10Z  0xdc89…7ac3  BUY        7.00 @ 0.560       $3.92  [Up] Bitcoin Up or Down - July 13, 12:00AM-12:05AM ET  tx 0x67ef…71a9
 已停止监控。

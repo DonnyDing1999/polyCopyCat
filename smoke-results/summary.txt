@@ -1,10 +1,10 @@
-试验地址: 0xeebde7a0e019a63e6b476eb425505b7b3e6eba30 0xcd47de69aa50e406b009127881df516d1ccc5ee7 0xc97ec8059025a28f61666d5202292c858b2809ab
+试验地址: 0x20d2309cd92b797ae7ca175ed828ed8a27fbe29d 0xdc8923aa7d6b293af2974c521092d0026ac37ac3 0x344f3b43711f48770930ce731d934df3b2999dec
 == T1 trades（真实 Data API 拉取）==
 T1: exit=0 成交行数=5 → PASS
 == T2 watch --stream 90s（RTDS WebSocket 协议实测）==
-T2: exit=124 WS连接=OK 基线=OK 窗口内输出成交=35 条 → PASS
+T2: exit=124 WS连接=OK 基线=OK 窗口内输出成交=170 条 → PASS
 == T3 CLOB 市场元数据 + 订单簿（引擎依赖的端点）==
-T3: market: tick=0.001 min=5.0 negRisk=True accepting=True book: bids=93 asks=8  → PASS
+T3: market: tick=0.01 min=5.0 negRisk=False accepting=True book: bids=57 asks=42  → PASS
 == T4 纸面引擎真实全链路 150s + report ==
 T4: run_exit=124 引擎=OK 镜像初始化=OK report_exit=0 → PASS
-T4 信号统计: skipped=35
+T4 信号统计: filtered=102, skipped=32

@@ -1,5 +1,5 @@
 # 账本 smoke-results/smoke-ledger.sqlite3
-信号统计: skipped=35
+信号统计: filtered=102, skipped=32
 已实现盈亏: 累计 $+0.00，今日 $+0.00
 
 ## 当前持仓（0 个）
