@@ -43,7 +43,8 @@
   },
   "notify": {
     "telegram_bot_token_env": "",
-    "telegram_chat_id": ""
+    "telegram_chat_id": "",
+    "discord_webhook_url_env": ""
   },
   "live": {
     "private_key_env": "POLYCOPYCAT_PRIVATE_KEY",

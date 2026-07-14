@@ -181,14 +181,16 @@ class WatchConfig:
 
 @dataclass
 class NotifyConfig:
-    """通知渠道；不配 Telegram 就只打日志。"""
+    """通知渠道；不配 Telegram / Discord 就只打日志。"""
 
     telegram_bot_token_env: str = ""  # 存 bot token 的环境变量名（不是 token 本身）
     telegram_chat_id: str = ""
+    discord_webhook_url_env: str = ""  # 存 Discord 频道 webhook URL 的环境变量名
 
     def __post_init__(self) -> None:
         self.telegram_bot_token_env = str(self.telegram_bot_token_env or "")
         self.telegram_chat_id = str(self.telegram_chat_id or "")
+        self.discord_webhook_url_env = str(self.discord_webhook_url_env or "")
 
 
 @dataclass
