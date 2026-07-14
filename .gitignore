@@ -42,3 +42,7 @@ data/
 copycat.json
 paper-week.json
 *.copycat.json
+
+# 部署环境文件（含 Discord webhook 等机密）
+deploy.env
+deploy/deploy.env
