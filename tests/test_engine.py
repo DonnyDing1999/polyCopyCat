@@ -113,6 +113,38 @@ def test_stale_signal_filtered(rig):
     assert ledger.signal_counts() == {"filtered": 1}
 
 
+def _sig_with_title(title):
+    from polycopycat.engine.config import TargetConfig
+    trade = Trade(
+        proxy_wallet=ADDR, side="BUY", asset="tok1", condition_id="0xcond",
+        size=100, price=0.5, timestamp=int(time.time()), title=title, outcome="Up",
+        transaction_hash="0xt",
+    )
+    return Signal(trade=trade, target=TargetConfig(address=ADDR), received_at=time.time())
+
+
+def test_skip_title_patterns_filters_short_term_markets():
+    from polycopycat.engine.config import FilterConfig
+    from polycopycat.engine.signals import SignalFilter
+    flt = SignalFilter(FilterConfig(skip_title_patterns=["up or down", "opens up"]))
+    ok, reason = flt.check(_sig_with_title("S&P 500 (SPX) Opens Up or Down on July 16?"))
+    assert not ok and "短期盘" in reason
+    # 大小写不敏感
+    ok2, _ = flt.check(_sig_with_title("SPY (SPY) UP OR DOWN on July 16?"))
+    assert not ok2
+    # 不命中的正常市场照常放行
+    ok3, _ = flt.check(_sig_with_title("Will Spain win the 2026 FIFA World Cup?"))
+    assert ok3
+
+
+def test_skip_title_patterns_empty_by_default():
+    from polycopycat.engine.config import FilterConfig
+    from polycopycat.engine.signals import SignalFilter
+    flt = SignalFilter(FilterConfig())  # 默认空 → 不因标题过滤
+    ok, _ = flt.check(_sig_with_title("Bitcoin Up or Down - 5m"))
+    assert ok
+
+
 def test_risk_block_notifies(rig):
     engine, ledger, notifier, _ = rig
     engine.config.risk.max_market_exposure_usdc = 10.0

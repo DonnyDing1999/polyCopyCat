@@ -62,6 +62,11 @@ class SignalFilter:
             return False, "已配置不跟随卖出"
         if trade.price <= 0 or trade.size <= 0:
             return False, "成交价格或数量非法"
+        if self._config.skip_title_patterns:
+            title = (trade.title or "").lower()
+            for pattern in self._config.skip_title_patterns:
+                if pattern in title:
+                    return False, f"命中短期盘过滤规则「{pattern}」，不跟"
         if signal.age_s > self._config.max_signal_age_s:
             return False, f"信号已过期 {signal.age_s:.0f}s（阈值 {self._config.max_signal_age_s:.0f}s）"
         return True, ""

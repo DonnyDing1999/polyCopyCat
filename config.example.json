@@ -20,7 +20,8 @@
   "filters": {
     "min_target_notional_usdc": 50,
     "max_signal_age_s": 30,
-    "follow_sells": true
+    "follow_sells": true,
+    "skip_title_patterns": []
   },
   "risk": {
     "max_market_exposure_usdc": 200,

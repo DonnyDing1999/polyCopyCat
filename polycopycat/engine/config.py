@@ -99,6 +99,7 @@ class FilterConfig:
     min_target_notional_usdc: float = 10.0  # 目标成交金额低于此不跟（尘埃单）
     max_signal_age_s: float = 30.0          # 信号超龄不跟（价格早已走掉）
     follow_sells: bool = True               # 是否跟随卖出（需要持仓镜像）
+    skip_title_patterns: list[str] = field(default_factory=list)  # 市场标题命中即不跟（短期盘）
 
     def __post_init__(self) -> None:
         self.min_target_notional_usdc = _positive(
@@ -108,6 +109,12 @@ class FilterConfig:
             "filters.max_signal_age_s", self.max_signal_age_s, allow_none=False
         )
         self.follow_sells = bool(self.follow_sells)
+        if not isinstance(self.skip_title_patterns, list):
+            raise ConfigError("filters.skip_title_patterns 应为字符串数组")
+        # 统一小写，匹配时不分大小写；空串忽略
+        self.skip_title_patterns = [
+            str(p).lower() for p in self.skip_title_patterns if str(p).strip()
+        ]
 
 
 @dataclass
