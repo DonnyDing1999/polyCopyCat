@@ -172,3 +172,63 @@ def test_disabled_by_zero_interval():
     engine._last_health_check -= 10**6
     engine._maybe_check_health()
     assert engine._targets[ADDR_B].paused is False
+
+
+# ---- 候选发现（扫全站活跃地址找新面孔）----
+
+NEW1 = "0x" + "c" * 40   # 健康新面孔
+NEW2 = "0x" + "d" * 40   # 不合格新面孔（空成交带）
+
+
+class DiscoverData(FakeDataClient):
+    def __init__(self, firehose, **kwargs):
+        super().__init__(**kwargs)
+        self.firehose = firehose
+
+    def get_recent_trades(self, limit=500, offset=0, **kwargs):
+        return self.firehose if offset == 0 else []
+
+
+def _fire(wallet, n, tx_prefix):
+    now = int(time.time())
+    return [
+        Trade(proxy_wallet=wallet, side="BUY", asset="tokF", condition_id="0xf",
+              size=500, price=0.5, timestamp=now - i, title="F", outcome="Yes",
+              transaction_hash=f"{tx_prefix}{i}")
+        for i in range(n)
+    ]
+
+
+def test_discover_finds_new_eligible_and_skips_existing(tmp_path):
+    # 全站流里活跃度：NEW1、NEW2、以及已在跟的 ADDR_A
+    firehose = _fire(NEW1, 6, "0xn1") + _fire(NEW2, 5, "0xn2") + _fire(ADDR_A, 4, "0xa")
+    data = DiscoverData(
+        firehose,
+        tapes={NEW1: healthy_tape(NEW1), NEW2: [], ADDR_A: healthy_tape(ADDR_A)},
+    )
+    engine, notifier = make_engine(data)
+    engine.config.ledger_path = str(tmp_path / "ledger.sqlite3")
+
+    found = engine.discover_candidates_once()
+    assert found == 1  # 只有 NEW1 合格；ADDR_A 在跟不参评；NEW2 不合格
+
+    import json as _json
+    payload = _json.loads((tmp_path / "discover-latest.json").read_text())
+    assert payload["evaluated"] == 2
+    assert [v["address"] for v in payload["eligible"]] == [NEW1]
+    assert any("候选发现" in m and "0xcccc" in m for m in notifier.messages)
+
+
+def test_discover_disabled_no_thread():
+    data = DiscoverData([], tapes={})
+    engine, _ = make_engine(data, discover_interval_s=0)
+    assert engine.config.health.discover_interval_s == 0.0
+
+
+def test_discover_no_candidates_writes_nothing(tmp_path):
+    data = DiscoverData([], tapes={})
+    engine, notifier = make_engine(data)
+    engine.config.ledger_path = str(tmp_path / "ledger.sqlite3")
+    assert engine.discover_candidates_once() == 0
+    assert not (tmp_path / "discover-latest.json").exists()
+    assert notifier.messages == []

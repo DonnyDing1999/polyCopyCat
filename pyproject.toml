@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "polycopycat"
-version = "0.21.0"
+version = "0.22.0"
 description = "Polymarket 跟单系统：监控目标地址成交并按规则自动跟单"
 readme = "README.md"
 requires-python = ">=3.10"

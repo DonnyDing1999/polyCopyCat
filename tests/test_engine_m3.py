@@ -319,3 +319,52 @@ def test_stop_mid_window_processes_pending_batch():
     time.sleep(0.05)  # 让引擎线程进入聚合窗口
     engine.stop(timeout=10)  # 不等窗口结束，停止时应处理完已收信号
     assert ledger.signal_counts() == {"executed": 1}
+
+
+# ---- 聚合窗口提前收批（idle flush）----
+
+def test_idle_flush_cuts_single_signal_latency():
+    engine, ledger, _, _ = make_rig(
+        aggregate={"window_s": 5.0, "idle_flush_s": 0.2, "net_across_targets": True}
+    )
+    engine.start()
+    try:
+        t0 = time.monotonic()
+        engine.submit(make_trade("0x1", size=200, price=0.50))
+        engine.drain()
+        elapsed = time.monotonic() - t0
+    finally:
+        engine.stop()
+    assert ledger.signal_counts() == {"executed": 1}
+    assert elapsed < 2.0  # 静默 0.2s 即收批，远小于 5s 窗口
+
+
+def test_idle_flush_zero_waits_full_window():
+    engine, ledger, _, _ = make_rig(
+        aggregate={"window_s": 0.6, "idle_flush_s": 0, "net_across_targets": True}
+    )
+    engine.start()
+    try:
+        t0 = time.monotonic()
+        engine.submit(make_trade("0x1", size=200, price=0.50))
+        engine.drain()
+        elapsed = time.monotonic() - t0
+    finally:
+        engine.stop()
+    assert ledger.signal_counts() == {"executed": 1}
+    assert elapsed >= 0.55  # 关闭提前收批则等满窗口
+
+
+def test_idle_flush_still_merges_rapid_burst():
+    engine, ledger, notifier, _ = make_rig(
+        aggregate={"window_s": 5.0, "idle_flush_s": 0.4, "net_across_targets": True}
+    )
+    engine.start()
+    try:
+        for i, size in enumerate((26, 26, 80)):  # 毫秒级连发
+            engine.submit(make_trade(f"0x{i}", size=size, price=0.50))
+        engine.drain()
+    finally:
+        engine.stop()
+    assert len(ledger.recent_orders()) == 1  # 连发仍并成一单
+    assert "并单 3 笔" in notifier.messages[0]

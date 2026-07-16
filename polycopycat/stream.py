@@ -54,6 +54,8 @@ class TradeStream:
         filters: str | None = None,
         ping_interval: float = 5.0,
         max_backoff: float = 30.0,
+        proto_ping_interval: float = 10.0,
+        proto_ping_timeout: float = 5.0,
     ) -> None:
         self._addresses = {normalize_address(a) for a in addresses}
         if not self._addresses:
@@ -66,6 +68,10 @@ class TradeStream:
         self.filters = filters
         self.ping_interval = float(ping_interval)
         self.max_backoff = float(max_backoff)
+        # 协议层 ping：探测死链（静默挂死而非干净断开）的上限 ≈ interval + timeout。
+        # 收紧到 10+5s，死链最多 15s 被发现并进入重连（原 20+10=30s）。
+        self.proto_ping_interval = float(proto_ping_interval)
+        self.proto_ping_timeout = float(proto_ping_timeout)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._app: websocket.WebSocketApp | None = None
@@ -106,7 +112,10 @@ class TradeStream:
             self._app = app
             try:
                 # 协议层 ping 探测死链；应用层 "ping" 在 _ping_loop 里按服务端要求发
-                app.run_forever(ping_interval=20, ping_timeout=10)
+                app.run_forever(
+                    ping_interval=self.proto_ping_interval,
+                    ping_timeout=self.proto_ping_timeout,
+                )
             except Exception as exc:  # noqa: BLE001 —— 任何异常都走重连
                 logger.debug("实时连接异常退出: %s", exc)
             if self._stop.is_set():

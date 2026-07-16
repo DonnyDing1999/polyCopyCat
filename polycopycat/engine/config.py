@@ -179,6 +179,7 @@ class AggregateConfig:
 
     window_s: float = 2.0            # 聚合窗口；0 或 null 表示不聚合、逐笔跟单
     net_across_targets: bool = True  # 同窗口内多目标对同一 token 的反向信号轧差
+    idle_flush_s: float = 0.5        # 窗口内静默多久提前收批；0 或 null = 等满窗口
 
     def __post_init__(self) -> None:
         if self.window_s in (None, 0, 0.0):
@@ -192,6 +193,14 @@ class AggregateConfig:
                 )
             self.window_s = window
         self.net_across_targets = bool(self.net_across_targets)
+        if self.idle_flush_s in (None, 0, 0.0):
+            self.idle_flush_s = 0.0
+        else:
+            # 碎片建仓的连发间隔是毫秒级：静默 0.5s 基本等于「不会再来了」，
+            # 提前收批把单笔信号的固定延迟从整个窗口降到静默阈值
+            self.idle_flush_s = _positive(
+                "aggregate.idle_flush_s", self.idle_flush_s, allow_none=False
+            )
 
 
 @dataclass
@@ -207,6 +216,8 @@ class HealthConfig:
     check_interval_s: float = 21600.0  # 巡检周期；0 或 null 关闭（默认 6 小时）
     auto_pause: bool = True            # 命中排除规则自动暂停（否则只通知）
     auto_resume: bool = True           # 仅对被巡检暂停的目标：恢复合格自动复跟
+    discover_interval_s: float = 86400.0  # 候选发现周期：扫全站活跃地址找可跟的新面孔；0/null 关
+    discover_candidates: int = 100        # 每轮评估多少个活跃地址
 
     def __post_init__(self) -> None:
         if self.check_interval_s in (None, 0, 0.0):
@@ -222,6 +233,18 @@ class HealthConfig:
                 )
         self.auto_pause = bool(self.auto_pause)
         self.auto_resume = bool(self.auto_resume)
+        if self.discover_interval_s in (None, 0, 0.0):
+            self.discover_interval_s = 0.0
+        else:
+            self.discover_interval_s = _positive(
+                "health.discover_interval_s", self.discover_interval_s, allow_none=False
+            )
+            if self.discover_interval_s < 3600:
+                raise ConfigError(
+                    f"health.discover_interval_s={self.discover_interval_s} 过小："
+                    "每轮要拉候选数×2 个接口（默认 100 人 ≈ 200 请求），下限 3600"
+                )
+        self.discover_candidates = max(1, int(self.discover_candidates))
 
 
 @dataclass

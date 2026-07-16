@@ -38,12 +38,15 @@
   },
   "aggregate": {
     "window_s": 2.0,
+    "idle_flush_s": 0.5,
     "net_across_targets": true
   },
   "health": {
     "check_interval_s": 21600,
     "auto_pause": true,
-    "auto_resume": true
+    "auto_resume": true,
+    "discover_interval_s": 86400,
+    "discover_candidates": 100
   },
   "watch": {
     "stream": true,

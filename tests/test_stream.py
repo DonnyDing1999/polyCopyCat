@@ -69,3 +69,10 @@ def test_requires_addresses():
 def test_backoff_grows_and_caps():
     stream = make_stream(max_backoff=8.0)
     assert [stream._next_backoff() for _ in range(5)] == [1.0, 2.0, 4.0, 8.0, 8.0]
+
+
+def test_proto_ping_defaults_tightened():
+    s = make_stream()
+    assert s.proto_ping_interval == 10.0 and s.proto_ping_timeout == 5.0
+    s2 = make_stream(proto_ping_interval=20, proto_ping_timeout=10)
+    assert s2.proto_ping_interval == 20.0 and s2.proto_ping_timeout == 10.0
