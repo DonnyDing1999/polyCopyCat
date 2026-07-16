@@ -98,6 +98,8 @@ class FilterConfig:
 
     min_target_notional_usdc: float = 10.0  # 目标成交金额低于此不跟（尘埃单）
     max_signal_age_s: float = 30.0          # 信号超龄不跟（价格早已走掉）
+    long_horizon_age_s: float | None = 120.0  # 长线市场放宽后的时效上限；null 关闭分级
+    long_horizon_days: float = 7.0            # 距市场结束 ≥ 此天数才算长线
     follow_sells: bool = True               # 是否跟随卖出（需要持仓镜像）
     skip_title_patterns: list[str] = field(default_factory=list)  # 市场标题命中即不跟（短期盘）
 
@@ -108,6 +110,19 @@ class FilterConfig:
         self.max_signal_age_s = _positive(
             "filters.max_signal_age_s", self.max_signal_age_s, allow_none=False
         )
+        self.long_horizon_age_s = _positive(
+            "filters.long_horizon_age_s", self.long_horizon_age_s
+        )
+        self.long_horizon_days = _positive(
+            "filters.long_horizon_days", self.long_horizon_days, allow_none=False
+        )
+        if (
+            self.long_horizon_age_s is not None
+            and self.long_horizon_age_s < self.max_signal_age_s
+        ):
+            raise ConfigError(
+                "filters.long_horizon_age_s 应 ≥ max_signal_age_s（长线是放宽，不是收紧）"
+            )
         self.follow_sells = bool(self.follow_sells)
         if not isinstance(self.skip_title_patterns, list):
             raise ConfigError("filters.skip_title_patterns 应为字符串数组")
@@ -143,12 +158,19 @@ class ExecutionConfig:
     """执行参数。"""
 
     slippage_cap: float = 0.02  # 相对目标成交价最多多付/少收多少（限价上限）
+    retry_no_fill_s: float | None = 3.0  # 限价内无对手盘时隔几秒重试一次；null 不重试
 
     def __post_init__(self) -> None:
         cap = _positive("execution.slippage_cap", self.slippage_cap, allow_none=False)
         if cap >= 0.5:
             raise ConfigError(f"execution.slippage_cap={cap} 明显过大（价格量纲是 0~1）")
         self.slippage_cap = cap
+        self.retry_no_fill_s = _positive("execution.retry_no_fill_s", self.retry_no_fill_s)
+        if self.retry_no_fill_s is not None and self.retry_no_fill_s > 15:
+            raise ConfigError(
+                f"execution.retry_no_fill_s={self.retry_no_fill_s} 过大：重试会阻塞引擎线程，"
+                "请 ≤ 15 秒"
+            )
 
 
 @dataclass

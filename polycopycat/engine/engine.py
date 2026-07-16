@@ -209,20 +209,25 @@ class CopyEngine:
         return out
 
     def _plan_group(self, group: MergedGroup) -> _Planned | None:
-        """合并后的金额过滤 + 市场元数据 + 仓位计算。"""
+        """市场元数据 + 按市场期限复核时效 + 金额过滤 + 仓位计算。"""
+        label = self._label(group)
+        try:
+            market = self._clob.get_market(group.trade.condition_id)
+        except ClobError as exc:
+            self._mark_group(group, "error", f"拉取市场元数据失败: {exc}")
+            logger.warning("拉取市场元数据失败，放弃该信号组: %s —— %s", exc, label)
+            return None
+
+        narrowed = self._enforce_market_age(group, market)
+        if narrowed is None:
+            return None
+        group = narrowed
         trade = group.trade
         label = self._label(group)
 
         ok, reason = self._filter.check_notional(trade.notional, group.count)
         if not ok:
             self._mark_group(group, "filtered", reason)
-            return None
-
-        try:
-            market = self._clob.get_market(trade.condition_id)
-        except ClobError as exc:
-            self._mark_group(group, "error", f"拉取市场元数据失败: {exc}")
-            logger.warning("拉取市场元数据失败，放弃该信号组: %s —— %s", exc, label)
             return None
 
         merged_signal = Signal(
@@ -250,6 +255,33 @@ class CopyEngine:
             self._mark_group(group, "skipped", reason)
             return None
         return _Planned(group=group, intent=intent, market=market)
+
+    def _enforce_market_age(self, group: MergedGroup, market: MarketInfo) -> MergedGroup | None:
+        """按该市场的精确时效上限复核信号组（逐笔粗筛只按放宽上限放行）。
+
+        长线市场放宽、短线维持严格（见 SignalFilter.age_limit_for）。
+        超龄成员标 filtered，剩余成员重新并组；全部超龄返回 None。
+        """
+        limit = self._filter.age_limit_for(market)
+        now = time.time()
+        fresh: list[PendingSignal] = []
+        for member in group.members:
+            age = now - member.signal.trade.timestamp
+            if age > limit:
+                self._ledger.update_signal(
+                    member.signal_id, "filtered",
+                    f"信号已过期 {age:.0f}s（该市场时效上限 {limit:.0f}s）",
+                )
+            else:
+                fresh.append(member)
+        if not fresh:
+            logger.info(
+                "过滤: 信号组全部超过该市场时效上限 %.0fs —— %s", limit, self._label(group)
+            )
+            return None
+        if len(fresh) == len(group.members):
+            return group
+        return merge_pending(fresh)
 
     def _net_planned(self, planned: list[_Planned]) -> list[_Planned]:
         """多目标轧差：同一 token 在本批内同时有买有卖时，只执行净头寸。"""
@@ -309,6 +341,18 @@ class CopyEngine:
             return
 
         result: ExecutionResult = self._executor.execute(intent)
+        retry_s = self.config.execution.retry_no_fill_s
+        if result.status == "rejected" and retry_s:
+            # 盘口是流动的：限价内暂时没对手盘，隔几秒常会回来；只重试这一种干净失败
+            logger.info("限价内无对手盘，%.1fs 后重试一次 —— %s", retry_s, self._label(group))
+            time.sleep(retry_s)
+            second = self._executor.execute(intent)
+            if second.status == "rejected":
+                result = dataclasses.replace(second, detail=f"{second.detail}（已重试 1 次）")
+            else:
+                result = dataclasses.replace(
+                    second, detail=second.detail or "首次限价内无对手盘，重试 1 次后成交"
+                )
         self._ledger.record_order(
             group.signal_ids[0], intent,
             mode=self._executor.mode, status=result.status,

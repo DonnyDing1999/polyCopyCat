@@ -67,9 +67,34 @@ class SignalFilter:
             for pattern in self._config.skip_title_patterns:
                 if pattern in title:
                     return False, f"命中短期盘过滤规则「{pattern}」，不跟"
-        if signal.age_s > self._config.max_signal_age_s:
-            return False, f"信号已过期 {signal.age_s:.0f}s（阈值 {self._config.max_signal_age_s:.0f}s）"
+        ceiling = self.max_age_ceiling
+        if signal.age_s > ceiling:
+            return False, f"信号已过期 {signal.age_s:.0f}s（阈值 {ceiling:.0f}s）"
         return True, ""
+
+    @property
+    def max_age_ceiling(self) -> float:
+        """逐笔粗筛的时效上限：基础与长线放宽取大者。
+
+        这一步还不知道市场（要等 CLOB 元数据），先按最宽的口径放行，
+        拿到市场后由 age_limit_for 按该市场的精确上限复核。
+        """
+        return max(self._config.max_signal_age_s, self._config.long_horizon_age_s or 0.0)
+
+    def age_limit_for(self, market) -> float:
+        """该市场适用的时效上限：距结束足够远的长线市场用放宽值。
+
+        依据：长线市场（世界杯冠军、年底价位这类）一笔成交后价格几小时
+        都动不了多少，2 分钟内跟进依然新鲜；日内/短线盘价格秒级在走，
+        维持严格上限。市场没给结束时间时按短线保守处理。
+        """
+        relaxed = self._config.long_horizon_age_s
+        if not relaxed or relaxed <= self._config.max_signal_age_s:
+            return self._config.max_signal_age_s
+        end_ts = getattr(market, "end_ts", 0.0) or 0.0
+        if end_ts and end_ts - time.time() >= self._config.long_horizon_days * 86400:
+            return relaxed
+        return self._config.max_signal_age_s
 
     def check_notional(self, notional: float, count: int = 1) -> tuple[bool, str]:
         """金额阈值检查：聚合后对合并金额做，treats 尘埃单按合计口径。"""

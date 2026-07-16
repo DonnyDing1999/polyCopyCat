@@ -49,6 +49,8 @@ def make_config(**overrides):
                  "max_total_exposure_usdc": 1000, "daily_max_loss_usdc": 1000},
         # 本文件验证逐笔语义，聚合窗口显式关闭；聚合与轧差见 test_engine_m3.py
         "aggregate": {"window_s": 0},
+        # 无对手盘重试会 sleep，逐笔语义测试里关闭；重试见 test_dynamic_age_retry.py
+        "execution": {"slippage_cap": 0.02, "retry_no_fill_s": None},
     }
     raw.update(overrides)
     return EngineConfig.from_dict(raw)

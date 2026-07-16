@@ -20,6 +20,8 @@
   "filters": {
     "min_target_notional_usdc": 50,
     "max_signal_age_s": 30,
+    "long_horizon_age_s": 120,
+    "long_horizon_days": 7,
     "follow_sells": true,
     "skip_title_patterns": []
   },
@@ -31,7 +33,8 @@
     "kill_switch_file": "STOP"
   },
   "execution": {
-    "slippage_cap": 0.02
+    "slippage_cap": 0.02,
+    "retry_no_fill_s": 3
   },
   "aggregate": {
     "window_s": 2.0,

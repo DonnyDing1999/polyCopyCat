@@ -13,6 +13,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 import requests
@@ -51,6 +52,7 @@ class MarketInfo:
     slug: str = ""
     question: str = ""
     winner_token_ids: tuple[str, ...] = ()  # 已结算市场的获胜 token（未结算为空）
+    end_ts: float = 0.0  # 市场结束时间（epoch 秒；0 = 接口没给，按短线保守处理）
 
     @property
     def resolved(self) -> bool:
@@ -64,6 +66,15 @@ class MarketInfo:
             for t in raw.get("tokens") or []
             if isinstance(t, dict) and t.get("winner") and t.get("token_id")
         )
+        end_ts = 0.0
+        raw_end = raw.get("end_date_iso") or raw.get("endDateIso") or ""
+        if raw_end:
+            try:
+                end_ts = datetime.fromisoformat(
+                    str(raw_end).replace("Z", "+00:00")
+                ).timestamp()
+            except ValueError:
+                end_ts = 0.0
         return cls(
             condition_id=str(raw.get("condition_id") or raw.get("conditionId") or ""),
             tick_size=_as_float(raw.get("minimum_tick_size"), 0.01),
@@ -74,6 +85,7 @@ class MarketInfo:
             slug=str(raw.get("market_slug", "")),
             question=str(raw.get("question", "")),
             winner_token_ids=winners,
+            end_ts=end_ts,
         )
 
 
