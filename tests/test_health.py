@@ -232,3 +232,85 @@ def test_discover_no_candidates_writes_nothing(tmp_path):
     assert engine.discover_candidates_once() == 0
     assert not (tmp_path / "discover-latest.json").exists()
     assert notifier.messages == []
+
+
+# ---- 自动招募（动态加人跟单）----
+
+def test_auto_recruit_adds_target_and_persists(tmp_path):
+    firehose = _fire(NEW1, 6, "0xn1") + _fire(NEW2, 5, "0xn2")
+    data = DiscoverData(firehose, tapes={NEW1: healthy_tape(NEW1), NEW2: []})
+    followed = []
+    engine, notifier = make_engine(
+        data, auto_recruit=True, recruit_ratio=0.05,
+        recruit_max_per_trade_usdc=25, recruit_max_targets=15,
+    )
+    engine._on_new_target = followed.append
+    engine.config.ledger_path = str(tmp_path / "ledger.sqlite3")
+
+    assert engine.discover_candidates_once() == 1
+    # NEW1 成为在跟目标，参数用招募档位
+    assert NEW1 in engine._targets
+    assert engine._targets[NEW1].ratio == 0.05
+    assert engine._targets[NEW1].max_per_trade_usdc == 25
+    assert followed == [NEW1]
+    assert any("自动加入纸面跟单" in m for m in notifier.messages)
+    # 档案落盘
+    import json as _json
+    entries = _json.loads((tmp_path / "recruited.json").read_text())
+    assert [e["address"] for e in entries] == [NEW1]
+    # 第二轮：NEW1 已在跟，不再参评也不重复招募
+    assert engine.discover_candidates_once() == 0
+    assert len([a for a in engine._targets if a == NEW1]) == 1
+
+
+def test_auto_recruit_respects_cap(tmp_path):
+    firehose = _fire(NEW1, 6, "0xn1")
+    data = DiscoverData(firehose, tapes={NEW1: healthy_tape(NEW1)})
+    engine, _ = make_engine(data, auto_recruit=True, recruit_max_targets=2)  # 已有 2 目标
+    engine.config.ledger_path = str(tmp_path / "ledger.sqlite3")
+    engine.discover_candidates_once()
+    assert NEW1 not in engine._targets  # 到顶不招
+    assert not (tmp_path / "recruited.json").exists()
+
+
+def test_auto_recruit_paper_only(tmp_path):
+    firehose = _fire(NEW1, 6, "0xn1")
+    data = DiscoverData(firehose, tapes={NEW1: healthy_tape(NEW1)})
+    config = EngineConfig.from_dict({
+        "mode": "live",
+        "targets": [{"address": ADDR_A}],
+        "risk": {"kill_switch_file": ""},
+        "aggregate": {"window_s": 0},
+        "health": {"auto_recruit": True},
+        "live": {"i_understand_live_trading_risk": True},
+    })
+    config.ledger_path = str(tmp_path / "ledger.sqlite3")
+    clob = FakeClob()
+    engine = CopyEngine(config, clob=clob, ledger=Ledger(":memory:"),
+                        executor=PaperExecutor(clob), notifier=ListNotifier(),
+                        data_client=data)
+    engine.discover_candidates_once()
+    assert NEW1 not in engine._targets  # 实盘绝不自动加人
+
+
+def test_merge_recruited_targets_restores_on_restart(tmp_path):
+    from polycopycat.engine.engine import merge_recruited_targets
+    import json as _json
+    (tmp_path / "recruited.json").write_text(_json.dumps([
+        {"address": NEW1, "ratio": 0.05, "max_per_trade_usdc": 25},
+        {"address": ADDR_A, "ratio": 0.05},  # 已在配置里，跳过
+        {"address": "not-an-address"},       # 损坏条目，跳过
+    ]))
+    config = EngineConfig.from_dict({
+        "targets": [{"address": ADDR_A}, {"address": ADDR_B}],
+        "ledger_path": str(tmp_path / "ledger.sqlite3"),
+    })
+    added = merge_recruited_targets(config)
+    assert added == [NEW1]
+    assert {t.address for t in config.targets} == {ADDR_A, ADDR_B, NEW1}
+    # 引擎构造时能认出档案里的招募身份（保存时不丢历史）
+    clob = FakeClob()
+    engine = CopyEngine(config, clob=clob, ledger=Ledger(":memory:"),
+                        executor=PaperExecutor(clob), notifier=ListNotifier(),
+                        data_client=DiscoverData([], tapes={}))
+    assert NEW1 in engine._recruited

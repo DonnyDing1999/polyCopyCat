@@ -76,3 +76,12 @@ def test_proto_ping_defaults_tightened():
     assert s.proto_ping_interval == 10.0 and s.proto_ping_timeout == 5.0
     s2 = make_stream(proto_ping_interval=20, proto_ping_timeout=10)
     assert s2.proto_ping_interval == 20.0 and s2.proto_ping_timeout == 10.0
+
+
+def test_add_address_extends_client_filter():
+    s = make_stream([A1])
+    assert not s._extract_trades(wrap(payload(wallet=A2, tx="0x9")))
+    assert s.add_address(A2) is True
+    assert s.add_address(A2) is False
+    trades = s._extract_trades(wrap(payload(wallet=A2, tx="0x9")))
+    assert len(trades) == 1 and trades[0].proxy_wallet == A2

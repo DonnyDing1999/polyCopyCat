@@ -227,7 +227,7 @@ def run_preflight(data_client, clob) -> tuple[bool, bool]:
 def cmd_run(args: argparse.Namespace) -> int:
     from .engine.clob import ClobReadClient
     from .engine.config import ConfigError, load_config
-    from .engine.engine import CopyEngine
+    from .engine.engine import CopyEngine, merge_recruited_targets
     from .engine.executor import PaperExecutor
     from .engine.ledger import Ledger
     from .engine.notify import build_notifier
@@ -265,9 +265,20 @@ def cmd_run(args: argparse.Namespace) -> int:
     else:
         executor = PaperExecutor(clob)
 
+    restored = merge_recruited_targets(config)
+    if restored:
+        print(f"已并回 {len(restored)} 个历史自动招募目标", file=sys.stderr)
+
+    def _follow_new_target(address: str) -> None:
+        # 招募发生在发现线程里，此时 watcher/stream 早已建好（首轮发现距启动 ≥1h）
+        watcher.add_address(address)
+        if stream is not None:
+            stream.add_address(address)
+
     engine = CopyEngine(
         config, clob=clob, ledger=ledger, executor=executor, notifier=notifier,
         data_client=data_client, own_address=own_address,
+        on_new_target=_follow_new_target,
     )
     engine.start()
 

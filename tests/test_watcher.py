@@ -123,3 +123,24 @@ def test_api_error_skips_address_but_not_others():
     watcher.poll_once()  # A1 失败被跳过，A2 建立基线
     fresh = watcher.poll_once()
     assert [t.transaction_hash for t in fresh] == ["0xb"]
+
+
+def test_add_address_baselines_before_reporting():
+    """动态加入的地址：老成交只建基线，不刷成新信号；之后的新成交正常上报。"""
+    a3 = "0x" + "f" * 40
+    old_tape = [make_trade("0xold2", 200, wallet=a3), make_trade("0xold1", 100, wallet=a3)]
+    client = FakeClient({
+        A1: [[make_trade("0x1", 100)]],
+        a3: [old_tape, [make_trade("0xnew", 300, wallet=a3)] + old_tape],
+    })
+    got = []
+    watcher = TradeWatcher(client, [A1], on_trade=got.append)
+    watcher.poll_once()  # A1 建基线
+
+    assert watcher.add_address(a3) is True
+    assert watcher.add_address(a3) is False  # 重复加返回 False
+    watcher.poll_once()  # a3 首轮：只建基线，老成交不上报
+    assert got == []
+
+    watcher.poll_once()  # a3 出现新成交
+    assert [t.transaction_hash for t in got] == ["0xnew"]

@@ -46,7 +46,11 @@
     "auto_pause": true,
     "auto_resume": true,
     "discover_interval_s": 86400,
-    "discover_candidates": 100
+    "discover_candidates": 100,
+    "auto_recruit": false,
+    "recruit_ratio": 0.05,
+    "recruit_max_per_trade_usdc": 25,
+    "recruit_max_targets": 15
   },
   "watch": {
     "stream": true,

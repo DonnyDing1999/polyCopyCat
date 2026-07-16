@@ -24,7 +24,7 @@ from ..data_api import DataApiClient, DataApiError
 from ..models import Trade
 from .aggregate import MergedGroup, PendingSignal, group_key, merge_pending
 from .clob import ClobError, ClobReadClient, MarketInfo
-from .config import EngineConfig
+from .config import EngineConfig, TargetConfig
 from .executor import ExecutionResult
 from .ledger import Ledger
 from .mirror import TargetMirror
@@ -40,6 +40,51 @@ _STOP = object()
 
 def _short(text: str) -> str:
     return f"{text[:6]}…{text[-4:]}" if len(text) > 12 else text
+
+
+def _recruited_path(config: EngineConfig) -> Path:
+    return Path(config.ledger_path).parent / "recruited.json"
+
+
+def merge_recruited_targets(config: EngineConfig) -> list[str]:
+    """启动时把历史自动招募的目标（recruited.json）并回 targets。
+
+    引擎运行中招募的目标只活在内存里，靠这个文件在重启后存续；用户
+    配置文件永远不被改写。返回并入的地址列表。
+    """
+    path = _recruited_path(config)
+    if not path.exists():
+        return []
+    try:
+        entries = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        logger.warning("读取招募档案 %s 失败，忽略: %s", path, exc)
+        return []
+    if not isinstance(entries, list):
+        return []
+    existing = {t.address for t in config.targets}
+    added: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if len(config.targets) >= config.health.recruit_max_targets:
+            break
+        try:
+            target = TargetConfig(
+                address=str(entry.get("address", "")),
+                ratio=entry.get("ratio"),
+                max_per_trade_usdc=entry.get("max_per_trade_usdc"),
+            )
+        except Exception:  # noqa: BLE001 —— 单条损坏不拖累其余
+            continue
+        if target.address in existing:
+            continue
+        config.targets.append(target)
+        existing.add(target.address)
+        added.append(target.address)
+    if added:
+        logger.info("已并回 %d 个历史招募目标: %s", len(added), ", ".join(_short(a) for a in added))
+    return added
 
 
 @dataclasses.dataclass
@@ -63,6 +108,7 @@ class CopyEngine:
         mirror: TargetMirror | None = None,
         data_client: DataApiClient | None = None,
         own_address: str | None = None,
+        on_new_target=None,  # 招募新目标后的回调（cmd_run 用它让 watcher/stream 开始盯新地址）
     ) -> None:
         self.config = config
         self._clob = clob
@@ -82,6 +128,18 @@ class CopyEngine:
         self._redeem_notified: set[str] = set()
         self._health_paused: set[str] = set()   # 由健康巡检暂停的目标（区别于手动 paused）
         self._last_health_check = time.monotonic()  # 启动后满一个周期才首查
+        self._on_new_target = on_new_target
+        # 标记哪些目标是自动招募的（重启后从档案恢复标记，保存时不丢历史）
+        self._recruited: dict[str, dict] = {}
+        recruited_file = _recruited_path(config)
+        if recruited_file.exists():
+            try:
+                for entry in json.loads(recruited_file.read_text(encoding="utf-8")) or []:
+                    address = str(entry.get("address", "")).lower()
+                    if address in self._targets:
+                        self._recruited[address] = entry
+            except (OSError, ValueError):
+                pass
 
     # ---- 对外接口 ----
 
@@ -567,6 +625,7 @@ class CopyEngine:
             return 0
         verdicts = scout_addresses(self._data, fresh, config=ScoutConfig())
         eligible = [v for v in verdicts if v.eligible]
+        recruited = self._recruit(eligible)
 
         out_path = Path(self.config.ledger_path).parent / "discover-latest.json"
         payload = {
@@ -591,11 +650,68 @@ class CopyEngine:
                     f"  {_short(v.address)} 分{v.score:.0f} 盈亏{pnl} 胜率{win} 笔均${s.avg_trade_usdc:,.0f}"
                     if s else f"  {_short(v.address)} 分{v.score:.0f}"
                 )
-            lines.append(f"完整名单 {out_path}；要跟谁，编辑配置 targets 后重启")
+            if recruited:
+                health = self.config.health
+                lines.append(
+                    f"🤝 已自动加入纸面跟单 {len(recruited)} 个："
+                    + "、".join(_short(a) for a in recruited)
+                    + f"（ratio {health.recruit_ratio} / 单笔 ${health.recruit_max_per_trade_usdc:.0f}，"
+                    "变质由健康巡检自动暂停）"
+                )
+            else:
+                lines.append(f"完整名单 {out_path}；要跟谁，编辑配置 targets 后重启")
             self._notifier.send("\n".join(lines))
         else:
             logger.info("候选发现：评估 %d 个，无合格新面孔", len(fresh))
         return len(eligible)
+
+    def _recruit(self, eligible) -> list[str]:
+        """把合格新面孔自动加入跟单（仅纸面模式），并持久化到招募档案。
+
+        watcher/stream 通过 on_new_target 回调开始盯新地址（老成交走基线
+        机制不会刷成新信号）；镜像由下一轮对账补快照。
+        """
+        health = self.config.health
+        if not eligible or not health.auto_recruit:
+            return []
+        if self.config.mode != "paper":
+            logger.warning("auto_recruit 仅纸面模式生效，实盘模式忽略（%d 个合格候选）", len(eligible))
+            return []
+        recruited: list[str] = []
+        for verdict in eligible:  # scout 已按分数降序
+            if len(self._targets) >= health.recruit_max_targets:
+                logger.info("目标总数已达上限 %d，本轮不再招募", health.recruit_max_targets)
+                break
+            target = TargetConfig(
+                address=verdict.address,
+                ratio=health.recruit_ratio,
+                max_per_trade_usdc=health.recruit_max_per_trade_usdc,
+            )
+            self._targets[target.address] = target
+            self._recruited[target.address] = {
+                "address": target.address,
+                "ratio": health.recruit_ratio,
+                "max_per_trade_usdc": health.recruit_max_per_trade_usdc,
+                "recruited_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "score": verdict.score,
+            }
+            recruited.append(target.address)
+            if self._on_new_target is not None:
+                try:
+                    self._on_new_target(target.address)
+                except Exception:  # noqa: BLE001 —— 回调失败不阻塞招募（轮询兜底仍会盯）
+                    logger.exception("通知监控层新目标失败: %s", target.address)
+        if recruited:
+            path = _recruited_path(self.config)
+            tmp = path.with_suffix(".tmp")
+            tmp.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(
+                json.dumps(list(self._recruited.values()), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            tmp.replace(path)
+            logger.info("已招募 %d 个新目标并写入档案: %s", len(recruited), path)
+        return recruited
 
     def _settle_resolved_positions(self) -> None:
         """纸面自动结算：市场关闭且有 winner 后，按 1.00/0.00 把持仓入账清仓。

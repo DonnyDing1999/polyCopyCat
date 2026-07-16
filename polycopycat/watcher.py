@@ -60,6 +60,23 @@ class TradeWatcher:
     def addresses(self) -> list[str]:
         return list(self._addresses)
 
+    def add_address(self, address: str) -> bool:
+        """运行中动态加一个监控地址（候选招募用），线程安全。
+
+        新地址走与启动相同的基线机制：下一轮轮询先建基线，不把历史刷成
+        新成交。已在监控的返回 False。
+        """
+        address = normalize_address(address)
+        with self._lock:
+            if address in self._seen:
+                return False
+            self._seen[address] = set()
+            self._seen_order[address] = deque()
+            self._addresses.append(address)
+        logger.info("动态加入监控地址: %s（下一轮先建基线）", address)
+        self.request_poll()  # 立即轮询建基线，尽快开始跟
+        return True
+
     def poll_once(self) -> list[Trade]:
         """轮询一轮所有地址，按时间升序返回（并回调）新增成交。
 

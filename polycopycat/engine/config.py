@@ -218,6 +218,10 @@ class HealthConfig:
     auto_resume: bool = True           # 仅对被巡检暂停的目标：恢复合格自动复跟
     discover_interval_s: float = 86400.0  # 候选发现周期：扫全站活跃地址找可跟的新面孔；0/null 关
     discover_candidates: int = 100        # 每轮评估多少个活跃地址
+    auto_recruit: bool = False            # 合格新面孔自动加入跟单（仅纸面模式生效）
+    recruit_ratio: float = 0.05           # 招募目标的跟单比例（比常规目标保守）
+    recruit_max_per_trade_usdc: float = 25.0  # 招募目标的单笔上限
+    recruit_max_targets: int = 15         # 目标总数上限（配置 + 招募），防无限膨胀
 
     def __post_init__(self) -> None:
         if self.check_interval_s in (None, 0, 0.0):
@@ -245,6 +249,12 @@ class HealthConfig:
                     "每轮要拉候选数×2 个接口（默认 100 人 ≈ 200 请求），下限 3600"
                 )
         self.discover_candidates = max(1, int(self.discover_candidates))
+        self.auto_recruit = bool(self.auto_recruit)
+        self.recruit_ratio = _positive("health.recruit_ratio", self.recruit_ratio, allow_none=False)
+        self.recruit_max_per_trade_usdc = _positive(
+            "health.recruit_max_per_trade_usdc", self.recruit_max_per_trade_usdc, allow_none=False
+        )
+        self.recruit_max_targets = max(1, int(self.recruit_max_targets))
 
 
 @dataclass

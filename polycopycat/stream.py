@@ -78,6 +78,15 @@ class TradeStream:
         self._backoff = _INITIAL_BACKOFF
         self._connected_once = False
 
+    def add_address(self, address: str) -> bool:
+        """运行中动态加一个过滤地址（订阅本就是全站流 + 客户端过滤，无需重连）。"""
+        normalized = normalize_address(address)
+        if normalized in self._addresses:
+            return False
+        self._addresses.add(normalized)
+        logger.info("实时流动态加入过滤地址: %s", normalized)
+        return True
+
     # ---- 生命周期 ----
 
     def start(self) -> None:
