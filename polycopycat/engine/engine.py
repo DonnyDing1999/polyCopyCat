@@ -78,6 +78,8 @@ class CopyEngine:
         self._reconcile_thread: threading.Thread | None = None
         self._reconcile_stop = threading.Event()
         self._redeem_notified: set[str] = set()
+        self._health_paused: set[str] = set()   # 由健康巡检暂停的目标（区别于手动 paused）
+        self._last_health_check = time.monotonic()  # 启动后满一个周期才首查
 
     # ---- 对外接口 ----
 
@@ -420,6 +422,10 @@ class CopyEngine:
                 self.reconcile_once()
             except Exception:  # noqa: BLE001 —— 对账失败下轮再试
                 logger.exception("对账失败，下一轮继续")
+            try:
+                self._maybe_check_health()
+            except Exception:  # noqa: BLE001 —— 巡检失败不影响对账主流程
+                logger.exception("目标健康巡检失败，下一轮继续")
 
     def reconcile_once(self) -> None:
         """刷新目标持仓镜像；纸面自动结算已出结果的持仓；实盘同步持仓并提醒可赎回。"""
@@ -455,6 +461,68 @@ class CopyEngine:
                 f"🎉 市场已结算可赎回：{p.size:.2f} 份 [{p.outcome}] {p.title} —— "
                 "请在 Polymarket 页面 redeem 换回 USDC"
             )
+
+    def _maybe_check_health(self) -> None:
+        interval = self.config.health.check_interval_s
+        if interval <= 0 or self._data is None:
+            return
+        now = time.monotonic()
+        if now - self._last_health_check < interval:
+            return
+        self._last_health_check = now
+        self.check_targets_health()
+
+    def check_targets_health(self) -> None:
+        """试用期考核：用 scout 的排除规则复查在跟目标，变质即暂停、恢复即复跟。
+
+        手动暂停（配置 paused=true 且非巡检所为）的目标不碰；数据拉取失败
+        跳过该目标（绝不因网络抖动误停）。
+        """
+        if self._data is None:
+            return
+        from ..scout import ScoutConfig, evaluate, replay
+
+        scout_config = ScoutConfig()
+        for index, (address, target) in enumerate(self._targets.items()):
+            if target.paused and address not in self._health_paused:
+                continue  # 手动暂停的目标，巡检不越权
+            if index and scout_config.request_delay_s > 0:
+                time.sleep(scout_config.request_delay_s)
+            try:
+                tape = self._data.get_trades(address, limit=500)
+                positions = self._data.get_positions(address)
+            except DataApiError as exc:
+                logger.warning("健康巡检拉取 %s 失败，本轮跳过: %s", _short(address), exc)
+                continue
+            stats = replay(address, tape, quick_window_s=scout_config.quick_window_s)
+            verdict = evaluate(stats, positions, scout_config)
+
+            if verdict.eligible:
+                if address in self._health_paused and self.config.health.auto_resume:
+                    target.paused = False
+                    self._health_paused.discard(address)
+                    self._notifier.send(
+                        f"✅ 健康巡检：{_short(address)} 已恢复合格，自动复跟"
+                    )
+                else:
+                    logger.debug("健康巡检 ✓ %s", _short(address))
+                continue
+
+            reasons = "；".join(verdict.reasons)
+            if address in self._health_paused:
+                logger.info("健康巡检：%s 仍不合格（%s），维持暂停", _short(address), reasons)
+            elif self.config.health.auto_pause:
+                target.paused = True
+                self._health_paused.add(address)
+                self._notifier.send(
+                    f"⚠️ 健康巡检：{_short(address)} 命中排除规则（{reasons}），"
+                    "已自动暂停跟单（镜像继续维护，恢复合格自动复跟）"
+                )
+            else:
+                self._notifier.send(
+                    f"⚠️ 健康巡检：{_short(address)} 命中排除规则（{reasons}），"
+                    "建议人工复查（auto_pause 已关闭，仍在跟单）"
+                )
 
     def _settle_resolved_positions(self) -> None:
         """纸面自动结算：市场关闭且有 winner 后，按 1.00/0.00 把持仓入账清仓。

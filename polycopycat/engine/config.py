@@ -195,6 +195,36 @@ class AggregateConfig:
 
 
 @dataclass
+class HealthConfig:
+    """在跟目标的健康巡检：scout 是入场时的招聘，这是入场后的试用期考核。
+
+    周期性用 scout 的排除规则复查每个在跟目标（回放最近成交带 + 当前持仓），
+    命中排除规则（死仓暴增/频率突变/胜率崩/长期不活跃等）自动暂停该目标，
+    防止「跟的人变质了还跟着亏几天」。被巡检暂停的目标恢复合格后可自动复跟；
+    手动暂停（配置里 paused=true）的目标巡检不碰。
+    """
+
+    check_interval_s: float = 21600.0  # 巡检周期；0 或 null 关闭（默认 6 小时）
+    auto_pause: bool = True            # 命中排除规则自动暂停（否则只通知）
+    auto_resume: bool = True           # 仅对被巡检暂停的目标：恢复合格自动复跟
+
+    def __post_init__(self) -> None:
+        if self.check_interval_s in (None, 0, 0.0):
+            self.check_interval_s = 0.0
+        else:
+            self.check_interval_s = _positive(
+                "health.check_interval_s", self.check_interval_s, allow_none=False
+            )
+            if self.check_interval_s < 600:
+                raise ConfigError(
+                    f"health.check_interval_s={self.check_interval_s} 过小："
+                    "巡检每目标要拉 2 个接口，过频会撞限流（下限 600）"
+                )
+        self.auto_pause = bool(self.auto_pause)
+        self.auto_resume = bool(self.auto_resume)
+
+
+@dataclass
 class WatchConfig:
     """信号源（复用 watch 的轮询 + 实时推送）。"""
 
@@ -247,6 +277,7 @@ class EngineConfig:
     risk: RiskConfig = field(default_factory=RiskConfig)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     aggregate: AggregateConfig = field(default_factory=AggregateConfig)
+    health: HealthConfig = field(default_factory=HealthConfig)
     watch: WatchConfig = field(default_factory=WatchConfig)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
     live: LiveConfig = field(default_factory=LiveConfig)
@@ -287,7 +318,8 @@ class EngineConfig:
         sections = {
             "sizing": SizingConfig, "filters": FilterConfig, "risk": RiskConfig,
             "execution": ExecutionConfig, "aggregate": AggregateConfig,
-            "watch": WatchConfig, "notify": NotifyConfig, "live": LiveConfig,
+            "health": HealthConfig, "watch": WatchConfig,
+            "notify": NotifyConfig, "live": LiveConfig,
         }
         kwargs: dict[str, Any] = {"targets": targets}
         for name, section_cls in sections.items():

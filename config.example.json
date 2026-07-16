@@ -40,6 +40,11 @@
     "window_s": 2.0,
     "net_across_targets": true
   },
+  "health": {
+    "check_interval_s": 21600,
+    "auto_pause": true,
+    "auto_resume": true
+  },
   "watch": {
     "stream": true,
     "poll_interval": null,

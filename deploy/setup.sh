@@ -67,6 +67,34 @@ WantedBy=multi-user.target
 UNIT
 sudo systemctl daemon-reload
 
+echo "== 6/6 安装每日账本备份 timer =="
+chmod +x "$APP_DIR/deploy/backup.sh"
+sudo tee /etc/systemd/system/polycopycat-backup.service >/dev/null <<UNIT
+[Unit]
+Description=polyCopyCat ledger daily backup
+
+[Service]
+Type=oneshot
+User=$RUN_USER
+EnvironmentFile=-$ENVFILE
+Environment=POLYCOPYCAT_DIR=$APP_DIR
+ExecStart=$APP_DIR/deploy/backup.sh
+UNIT
+sudo tee /etc/systemd/system/polycopycat-backup.timer >/dev/null <<UNIT
+[Unit]
+Description=polyCopyCat ledger daily backup timer
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+sudo systemctl daemon-reload
+sudo systemctl enable --now polycopycat-backup.timer
+
 cat <<NEXT
 
 ────────────────────────────────────────────────────────

@@ -337,6 +337,22 @@ def cmd_report(args: argparse.Namespace) -> int:
                 f"  {p.size:>10.2f} 份 @ {p.avg_cost:.3f}  成本 ${p.cost:>8.2f}  "
                 f"已实现 ${p.realized_pnl:+8.2f}  [{p.outcome}] {p.title}"
             )
+        quality = ledger.execution_quality()
+        if quality.n_fills:
+            print(f"\n## 执行质量（{quality.n_fills} 笔成交）")
+            print(
+                f"  信号→成交延迟: 中位 {quality.median_delay_s:.1f}s / "
+                f"均值 {quality.avg_delay_s:.1f}s / 最大 {quality.max_delay_s:.0f}s"
+            )
+            print(
+                f"  跟入价 vs 目标价: 平均 {quality.avg_price_gap:+.4f}（正=比目标差），"
+                f"延迟+滑点合计成本 ${quality.slippage_cost:.2f}"
+            )
+            print(
+                f"  全额成交 {quality.full_fills}/{quality.n_fills}，"
+                f"重试后成交 {quality.retried_fills} 笔"
+            )
+
         if args.by_target:
             _print_by_target(ledger)
 

@@ -182,3 +182,56 @@ def test_report_by_target_buckets_settlement_separately(ledger):
 def test_report_by_target_empty(ledger):
     reports, settle_pnl, settle_n = ledger.report_by_target()
     assert reports == [] and settle_pnl == 0 and settle_n == 0
+
+
+# ---- 执行质量（report 的「执行质量」小节数据层）----
+
+def _aged_signal(ledger, tx, age_s, price=0.5, size=100.0):
+    trade = Trade(
+        proxy_wallet=ADDR, side="BUY", asset="tok1", condition_id="0xcond",
+        size=size, price=price, timestamp=int(time.time() - age_s), title="T",
+        outcome="Yes", transaction_hash=tx,
+    )
+    sid, _ = ledger.record_signal(
+        Signal(trade=trade, target=TargetConfig(address=ADDR), received_at=time.time())
+    )
+    return sid
+
+
+def test_execution_quality_empty(ledger):
+    q = ledger.execution_quality()
+    assert q.n_fills == 0 and q.slippage_cost == 0.0
+
+
+def test_execution_quality_metrics(ledger):
+    # 延迟 ~10s、滑点 +0.01、全额成交
+    sid1 = _aged_signal(ledger, "0xq1", age_s=10)
+    ledger.record_order(sid1, intent(size=100, limit=0.52), mode="paper", status="filled",
+                        filled_size=100, avg_price=0.51, slippage=0.01)
+    # 延迟 ~30s、滑点 +0.02、部分成交、带重试标注
+    sid2 = _aged_signal(ledger, "0xq2", age_s=30)
+    ledger.record_order(sid2, intent(size=50, limit=0.52), mode="paper", status="partial",
+                        filled_size=20, avg_price=0.52, slippage=0.02,
+                        detail="首次限价内无对手盘，重试 1 次后成交")
+    q = ledger.execution_quality()
+    assert q.n_fills == 2
+    assert q.full_fills == 1
+    assert q.retried_fills == 1
+    assert 9 <= q.avg_delay_s <= 22          # (10+30)/2 ≈ 20，容忍执行耗时
+    assert q.max_delay_s >= 29
+    assert abs(q.avg_price_gap - 0.015) < 1e-9
+    assert abs(q.slippage_cost - (0.01 * 100 + 0.02 * 20)) < 1e-9  # $1.40
+
+
+def test_execution_quality_excludes_redeem_and_unfilled(ledger):
+    sid = _aged_signal(ledger, "0xq1", age_s=5)
+    ledger.record_order(sid, intent(size=100, limit=0.52), mode="paper", status="filled",
+                        filled_size=100, avg_price=0.51, slippage=0.01)
+    # 未成交订单（rejected）不计入
+    sid2 = _aged_signal(ledger, "0xq2", age_s=5)
+    ledger.record_order(sid2, intent(size=50, limit=0.52), mode="paper", status="rejected",
+                        filled_size=0, avg_price=0)
+    # 市场结算 REDEEM（signal_id=0）不计入
+    ledger.settle_position("tok1", 1.0, mode="paper")
+    q = ledger.execution_quality()
+    assert q.n_fills == 1

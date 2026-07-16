@@ -88,6 +88,20 @@ class PositionRow:
 
 
 @dataclass(frozen=True)
+class ExecutionQuality:
+    """执行质量汇总：延迟、相对目标的价差、成交完成度（见 execution_quality）。"""
+
+    n_fills: int = 0
+    median_delay_s: float = 0.0
+    avg_delay_s: float = 0.0
+    max_delay_s: float = 0.0
+    avg_price_gap: float = 0.0   # 平均劣化（正 = 比目标价差）
+    slippage_cost: float = 0.0   # Σ(价差 × 成交量)，多付的钱
+    full_fills: int = 0
+    retried_fills: int = 0
+
+
+@dataclass(frozen=True)
 class TargetReport:
     """单个目标的跟单归因：信号归属 + 可归因的已实现盈亏。"""
 
@@ -356,6 +370,36 @@ class Ledger:
             )
             for r in self._conn.execute(sql).fetchall()
         ]
+
+    def execution_quality(self) -> "ExecutionQuality":
+        """执行质量：edge 被延迟和滑点吃掉多少（只统计有成交的跟单单）。
+
+        延迟 = 订单落库时间 - 目标成交时间（端到端：发现 + 聚合窗口 + 定价 + 执行）；
+        价差 = 我们的成交均价相对目标成交价的劣化（订单表 slippage 列，正 = 更差，
+        买卖两侧已归一）；滑点成本 = Σ(价差 × 成交量)，即「跟得慢/盘口差」合计
+        多付了多少钱。REDEEM（signal_id=0）天然不参与 join，不计入。
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT o.created_ts - s.trade_ts AS delay_s,
+                          o.slippage, o.filled_size, o.req_size, o.detail
+                   FROM orders o JOIN signals s ON o.signal_id = s.id
+                   WHERE o.side IN ('BUY', 'SELL') AND o.filled_size > 0"""
+            ).fetchall()
+        if not rows:
+            return ExecutionQuality()
+        delays = sorted(max(0.0, r["delay_s"]) for r in rows)
+        gaps = [r["slippage"] for r in rows]
+        return ExecutionQuality(
+            n_fills=len(rows),
+            median_delay_s=delays[len(delays) // 2],
+            avg_delay_s=sum(delays) / len(delays),
+            max_delay_s=delays[-1],
+            avg_price_gap=sum(gaps) / len(gaps),
+            slippage_cost=sum(r["slippage"] * r["filled_size"] for r in rows),
+            full_fills=sum(1 for r in rows if r["filled_size"] >= r["req_size"] - 1e-9),
+            retried_fills=sum(1 for r in rows if "重试" in (r["detail"] or "")),
+        )
 
     def recent_orders(self, limit: int = 20) -> list[sqlite3.Row]:
         return self._conn.execute(
