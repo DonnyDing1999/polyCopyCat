@@ -153,3 +153,105 @@ def test_fresh_activity_scores_higher_than_stale():
     stale = evaluate(stats, [], ScoutConfig(max_inactive_days=30),
                      now=stats.last_ts + 6 * DAY).score
     assert fresh > stale
+
+
+# ---- evaluate_health：试用期考核口径（活仓浮亏 + 窗口净盈亏，老死仓不追溯）----
+
+def _pos(asset, size, avg, cur, wallet="0x" + "a" * 40):
+    from polycopycat.models import Position
+    return Position(proxy_wallet=wallet, asset=asset, condition_id="0xc",
+                    size=size, avg_price=avg, cur_price=cur)
+
+
+def _tape_with_assets(wallet, assets, n_per=12, notional_each=300.0):
+    """给定资产列表造一条健康成交带（窗口内买过这些资产）。"""
+    import time as _t
+    now = int(_t.time())
+    trades = []
+    i = 0
+    for asset in assets:
+        for _ in range(n_per):
+            trades.append(Trade(
+                proxy_wallet=wallet, side="BUY", asset=asset, condition_id=f"0xc{asset}",
+                size=notional_each * 2, price=0.5, timestamp=now - i * 1800,
+                title="T", outcome="Yes", transaction_hash=f"0xh{i}",
+            ))
+            i += 1
+    return trades
+
+
+def test_health_old_corpses_not_counted():
+    """老死仓（窗口内没买过的资产）不追溯——b5b3 案例。"""
+    from polycopycat.scout.score import evaluate_health
+    wallet = "0x" + "a" * 40
+    tape = _tape_with_assets(wallet, ["live1", "live2"])
+    stats = replay(wallet, tape)
+    positions = [
+        _pos("oldDead", 2000, 0.5, 0.0),   # $1000 老死仓，asset 不在窗口内
+        _pos("live1", 100, 0.5, 0.48),     # 活仓小幅浮亏
+    ]
+    verdict = evaluate_health(stats, positions, tape, ScoutConfig())
+    assert verdict.eligible, verdict.reasons
+
+
+def test_health_recent_corpses_trigger_window_loss():
+    """窗口内买入后归零 → 窗口净亏损 → 暂停——90c2 案例。"""
+    from polycopycat.scout.score import evaluate_health
+    wallet = "0x" + "a" * 40
+    tape = _tape_with_assets(wallet, ["deadA", "deadB", "deadC"])
+    stats = replay(wallet, tape)
+    positions = [
+        _pos("deadA", 1000, 0.5, 0.0),
+        _pos("deadB", 800, 0.5, 0.0),
+        _pos("deadC", 600, 0.5, 0.0),
+    ]
+    verdict = evaluate_health(stats, positions, tape, ScoutConfig())
+    assert not verdict.eligible
+    assert any("窗口净亏损" in r for r in verdict.reasons)
+
+
+def test_health_recent_wins_offset_corpses():
+    """窗口内也有未赎回赢仓，净额为正 → 不暂停。"""
+    from polycopycat.scout.score import evaluate_health
+    wallet = "0x" + "a" * 40
+    tape = _tape_with_assets(wallet, ["dead1", "won1"])
+    stats = replay(wallet, tape)
+    positions = [
+        _pos("dead1", 400, 0.5, 0.0),    # -$200
+        _pos("won1", 600, 0.5, 1.0),     # +$300 未赎回
+    ]
+    verdict = evaluate_health(stats, positions, tape, ScoutConfig())
+    assert verdict.eligible, verdict.reasons
+
+
+def test_health_live_drawdown_still_pauses():
+    """活仓被套超过阈值 → 暂停（规则保留）。"""
+    from polycopycat.scout.score import evaluate_health
+    wallet = "0x" + "a" * 40
+    tape = _tape_with_assets(wallet, ["deep1"])
+    stats = replay(wallet, tape)
+    positions = [_pos("deep1", 2000, 0.5, 0.20)]  # 成本 $1000，浮亏 60%
+    verdict = evaluate_health(stats, positions, tape, ScoutConfig())
+    assert not verdict.eligible
+    assert any("活仓浮亏" in r for r in verdict.reasons)
+
+
+def test_health_small_corpse_sample_tolerated():
+    """孤立一具小尸体（样本不足）不触发窗口亏损规则。"""
+    from polycopycat.scout.score import evaluate_health
+    wallet = "0x" + "a" * 40
+    tape = _tape_with_assets(wallet, ["x1", "x2"])
+    stats = replay(wallet, tape)   # 纯买入：matched_sells=0
+    positions = [_pos("x1", 20, 0.5, 0.0)]  # 仅 -$10、1 个事件 < min_pnl_sample
+    verdict = evaluate_health(stats, positions, tape, ScoutConfig())
+    assert verdict.eligible, verdict.reasons
+
+
+def test_health_base_exclusions_still_apply():
+    """招聘版的其余排除（不活跃/频率等）在考核版照常生效。"""
+    from polycopycat.scout.score import evaluate_health
+    wallet = "0x" + "a" * 40
+    verdict = evaluate_health(
+        replay(wallet, []), [], [], ScoutConfig()
+    )
+    assert not verdict.eligible  # 空成交带 → 样本不足

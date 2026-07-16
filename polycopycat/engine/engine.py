@@ -551,7 +551,8 @@ class CopyEngine:
         """
         if self._data is None:
             return
-        from ..scout import ScoutConfig, evaluate, replay
+        from ..scout import ScoutConfig, replay
+        from ..scout.score import evaluate_health
 
         scout_config = ScoutConfig()
         for index, (address, target) in enumerate(self._targets.items()):
@@ -566,7 +567,8 @@ class CopyEngine:
                 logger.warning("健康巡检拉取 %s 失败，本轮跳过: %s", _short(address), exc)
                 continue
             stats = replay(address, tape, quick_window_s=scout_config.quick_window_s)
-            verdict = evaluate(stats, positions, scout_config)
+            # 考核版口径：活仓浮亏 + 窗口净盈亏（老死仓不追溯，见 evaluate_health）
+            verdict = evaluate_health(stats, positions, tape, scout_config)
 
             if verdict.eligible:
                 if address in self._health_paused and self.config.health.auto_resume:

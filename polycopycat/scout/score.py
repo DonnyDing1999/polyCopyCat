@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
-from ..models import Position
+from ..models import Position, Trade
 from .metrics import DEFAULT_QUICK_WINDOW_S, TraderStats
+
+# cur_price 低于此视为已归零的死仓（输方结算价），高于 0.999 视为待赎回的赢仓
+_DEAD_PRICE = 0.001
+_WON_PRICE = 0.999
 
 
 @dataclass
@@ -64,6 +68,74 @@ class Verdict:
             "exposure_usdc": round(self.exposure_usdc, 2),
             "unrealized_pnl": round(self.unrealized_pnl, 2),
         }
+
+
+def evaluate_health(
+    stats: TraderStats,
+    positions: list[Position] | None,
+    tape: list[Trade],
+    config: ScoutConfig,
+    *,
+    now: float | None = None,
+) -> Verdict:
+    """在跟目标的试用期考核：与招聘版 evaluate 只差在死仓与盈亏口径。
+
+    归零死仓（输方结算，cur_price≈0）永远不会从持仓接口消失，招聘版的
+    「浮亏占成本」实际衡量的是历史累计尸体——用它考核在跟目标会把
+    很久以前亏过钱、如今交易得很好的人永久踢出（且 auto_resume 永远
+    等不到）。考核版改为：
+
+    - **活仓浮亏**：只看未结算仓位（cur>0）的被套程度，阈值沿用
+      max_unrealized_drawdown_ratio；
+    - **窗口净盈亏**：死仓只追溯「本次回放窗口内买入后归零」的（老账
+      不追溯），与回放已实现盈亏、窗口内未赎回的赢仓合并成窗口净
+      盈亏判亏损——补上回放看不见的结算亏损，且随窗口滚动可恢复。
+      （已赎回的赢仓从持仓接口消失、无法计入，口径略偏保守。）
+    """
+    base_config = replace(
+        config,
+        min_exposure_for_drawdown_usdc=float("inf"),  # 关掉招聘版死仓规则
+        min_realized_pnl=float("-inf"),               # 盈亏改用窗口净口径判
+    )
+    verdict = evaluate(stats, positions, base_config, now=now)
+    reasons = list(verdict.reasons)
+    positions = positions or []
+
+    live = [p for p in positions if p.cur_price > _DEAD_PRICE]
+    live_exposure = sum(p.size * p.avg_price for p in live)
+    live_unrealized = sum(p.size * (p.cur_price - p.avg_price) for p in live)
+    if live_exposure >= config.min_exposure_for_drawdown_usdc:
+        drawdown = live_unrealized / live_exposure
+        if drawdown < -config.max_unrealized_drawdown_ratio:
+            reasons.append(f"活仓浮亏占成本 {-drawdown:.0%}（当前被套）")
+
+    bought_in_window = {t.asset for t in tape if t.side == "BUY"}
+    recent_dead = [
+        p for p in positions
+        if p.cur_price <= _DEAD_PRICE and p.asset in bought_in_window and p.size > 0
+    ]
+    recent_won = [
+        p for p in positions
+        if p.cur_price >= _WON_PRICE and p.asset in bought_in_window and p.size > 0
+    ]
+    dead_cost = sum(p.size * p.avg_price for p in recent_dead)
+    won_gain = sum(p.size * (p.cur_price - p.avg_price) for p in recent_won)
+    window_pnl = stats.realized_pnl + won_gain - dead_cost
+    pnl_sample = stats.matched_sells + len(recent_dead) + len(recent_won)
+    if pnl_sample >= config.min_pnl_sample and window_pnl < config.min_realized_pnl:
+        reasons.append(
+            f"窗口净亏损 ${window_pnl:,.2f}"
+            f"（回放 {stats.realized_pnl:+,.2f}、近期归零 -{dead_cost:,.2f}、"
+            f"未赎回盈利 +{won_gain:,.2f}）"
+        )
+
+    if not reasons:
+        return verdict  # 基础排除与两条考核规则都没命中
+    return Verdict(
+        address=stats.address, eligible=False, score=0.0, reasons=reasons,
+        stats=stats, exposure_usdc=verdict.exposure_usdc,
+        unrealized_pnl=verdict.unrealized_pnl,
+    )
 
 
 def evaluate(
