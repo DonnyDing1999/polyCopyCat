@@ -127,7 +127,9 @@ class CopyEngine:
         self._reconcile_stop = threading.Event()
         self._redeem_notified: set[str] = set()
         self._health_paused: set[str] = set()   # 由健康巡检暂停的目标（区别于手动 paused）
-        self._last_health_check = time.monotonic()  # 启动后满一个周期才首查
+        # 巡检/发现计时用墙钟并持久化在账本 state 表：重启接着算，不从零
+        self._last_health_check = time.time()
+        self._last_discover = time.time()
         self._on_new_target = on_new_target
         # 标记哪些目标是自动招募的（重启后从档案恢复标记，保存时不丢历史）
         self._recruited: dict[str, dict] = {}
@@ -140,6 +142,44 @@ class CopyEngine:
                         self._recruited[address] = entry
             except (OSError, ValueError):
                 pass
+        self._load_persisted_state()
+
+    def _load_persisted_state(self) -> None:
+        """从账本恢复巡检暂停名单与巡检/发现计时（重启不清、不重置）。"""
+        now = time.time()
+
+        def load_ts(key: str) -> float:
+            raw = self._ledger.get_state(key)
+            try:
+                ts = float(raw)
+            except (TypeError, ValueError):
+                return now  # 没有记录：从现在起算（首次运行语义不变）
+            return min(ts, now)  # 防未来时间戳
+
+        self._last_health_check = load_ts("health_last_check_ts")
+        self._last_discover = load_ts("discover_last_run_ts")
+
+        raw = self._ledger.get_state("health_paused")
+        try:
+            paused = json.loads(raw) if raw else []
+        except ValueError:
+            paused = []
+        restored = []
+        for address in paused:
+            target = self._targets.get(str(address).lower())
+            if target is None or target.paused:
+                continue  # 目标已移除或本就手动暂停：不越权
+            target.paused = True
+            self._health_paused.add(target.address)
+            restored.append(target.address)
+        if restored:
+            logger.info(
+                "已恢复 %d 个巡检暂停状态: %s",
+                len(restored), ", ".join(_short(a) for a in restored),
+            )
+
+    def _persist_health_paused(self) -> None:
+        self._ledger.set_state("health_paused", json.dumps(sorted(self._health_paused)))
 
     # ---- 对外接口 ----
 
@@ -545,10 +585,11 @@ class CopyEngine:
         interval = self.config.health.check_interval_s
         if interval <= 0 or self._data is None:
             return
-        now = time.monotonic()
+        now = time.time()
         if now - self._last_health_check < interval:
             return
         self._last_health_check = now
+        self._ledger.set_state("health_last_check_ts", str(now))
         self.check_targets_health()
 
     def check_targets_health(self) -> None:
@@ -582,6 +623,7 @@ class CopyEngine:
                 if address in self._health_paused and self.config.health.auto_resume:
                     target.paused = False
                     self._health_paused.discard(address)
+                    self._persist_health_paused()
                     self._ledger.record_event("health_resume", address, "恢复合格，自动复跟")
                     self._notifier.send(
                         f"✅ 健康巡检：{_short(address)} 已恢复合格，自动复跟"
@@ -596,6 +638,7 @@ class CopyEngine:
             elif self.config.health.auto_pause:
                 target.paused = True
                 self._health_paused.add(address)
+                self._persist_health_paused()
                 self._ledger.record_event("health_pause", address, reasons)
                 self._notifier.send(
                     f"⚠️ 健康巡检：{_short(address)} 命中排除规则（{reasons}），"
@@ -610,11 +653,23 @@ class CopyEngine:
     # ---- 候选发现 ----
 
     def _discover_loop(self) -> None:
-        while not self._reconcile_stop.wait(self.config.health.discover_interval_s):
+        # 每分钟醒来对表（墙钟 + 账本持久化），重启不再把 24h 计时清零
+        while not self._reconcile_stop.wait(60):
             try:
-                self.discover_candidates_once()
+                self._maybe_discover()
             except Exception:  # noqa: BLE001 —— 发现失败不影响任何主流程
                 logger.exception("候选发现失败，下一轮继续")
+
+    def _maybe_discover(self) -> None:
+        interval = self.config.health.discover_interval_s
+        if interval <= 0 or self._data is None:
+            return
+        now = time.time()
+        if now - self._last_discover < interval:
+            return
+        self._last_discover = now
+        self._ledger.set_state("discover_last_run_ts", str(now))
+        self.discover_candidates_once()
 
     def discover_candidates_once(self) -> int:
         """扫全站活跃地址找可跟的新面孔：发现自动，加不加人由用户决定。

@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS events (
     detail TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_events_target ON events(target);
+CREATE TABLE IF NOT EXISTS state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_ts REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     signal_id INTEGER NOT NULL,
@@ -484,6 +489,24 @@ class Ledger:
             counter[key] = counter.get(key, 0) + 1
         ranked = sorted(counter.items(), key=lambda kv: -kv[1])[: max(1, int(top))]
         return [(status, pattern, n) for (status, pattern), n in ranked]
+
+    # ---- 引擎状态（巡检暂停名单/计时等，重启后接着算而不是从零）----
+
+    def set_state(self, key: str, value: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO state (key, value, updated_ts) VALUES (?,?,?)
+                   ON CONFLICT(key) DO UPDATE SET
+                     value = excluded.value, updated_ts = excluded.updated_ts""",
+                (key, str(value), time.time()),
+            )
+
+    def get_state(self, key: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM state WHERE key = ?", (key,)
+            ).fetchone()
+        return row["value"] if row else None
 
     # ---- 事件（巡检/招募动作的持久档案，复盘「谁被停过、为什么」用）----
 

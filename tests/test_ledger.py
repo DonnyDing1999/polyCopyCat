@@ -344,3 +344,11 @@ def test_backfill_position_meta_noop_when_present(ledger):
                      size=10, ref_price=0.5, neg_risk=False, title="有", outcome="Yes")
     ledger.record_order(sid, oi, mode="paper", status="filled", filled_size=10, avg_price=0.5)
     assert ledger.backfill_position_meta({"tokZ": ("新", "0xnew")}) == 0
+
+
+def test_state_roundtrip(ledger):
+    assert ledger.get_state("k") is None
+    ledger.set_state("k", "123.5")
+    assert ledger.get_state("k") == "123.5"
+    ledger.set_state("k", "456")  # 覆盖
+    assert ledger.get_state("k") == "456"

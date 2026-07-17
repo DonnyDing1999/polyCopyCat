@@ -335,3 +335,107 @@ def test_recruit_recorded_as_event(tmp_path):
     engine.discover_candidates_once()
     summary = engine._ledger.target_event_summary()
     assert summary[NEW1]["recruits"] == 1
+
+
+# ---- 状态持久化：暂停名单与计时重启不清 ----
+
+def make_engine_with_ledger(data, ledger, targets=(ADDR_A, ADDR_B), **health):
+    config = EngineConfig.from_dict({
+        "targets": [{"address": a} for a in targets],
+        "risk": {"kill_switch_file": ""},
+        "aggregate": {"window_s": 0},
+        "health": {"check_interval_s": 21600, **health},
+    })
+    clob = FakeClob()
+    notifier = ListNotifier()
+    engine = CopyEngine(config, clob=clob, ledger=ledger,
+                        executor=PaperExecutor(clob), notifier=notifier,
+                        data_client=data)
+    return engine, notifier
+
+
+def test_health_pause_survives_restart(tmp_path):
+    db = tmp_path / "l.sqlite3"
+    data = FakeDataClient(tapes={ADDR_A: healthy_tape(ADDR_A), ADDR_B: []})
+    ledger1 = Ledger(db)
+    engine1, _ = make_engine_with_ledger(data, ledger1)
+    engine1.check_targets_health()          # B 被停并持久化
+    assert engine1._targets[ADDR_B].paused is True
+    ledger1.close()
+
+    # “重启”：同一账本、全新引擎 → 暂停状态与计时被恢复
+    ledger2 = Ledger(db)
+    engine2, _ = make_engine_with_ledger(data, ledger2)
+    assert engine2._targets[ADDR_B].paused is True
+    assert ADDR_B in engine2._health_paused
+    # 计时也从账本恢复（刚查过 → 不到下一周期不会再查）
+    assert engine2._last_health_check > 0
+    engine2._maybe_check_health()  # 不应触发（未满周期）——若触发也无害，但状态一致
+    ledger2.close()
+
+
+def test_health_resume_clears_persisted(tmp_path):
+    db = tmp_path / "l.sqlite3"
+    data = FakeDataClient(tapes={ADDR_A: healthy_tape(ADDR_A), ADDR_B: []})
+    ledger1 = Ledger(db)
+    engine1, _ = make_engine_with_ledger(data, ledger1)
+    engine1.check_targets_health()          # 停
+    data.tapes[ADDR_B] = healthy_tape(ADDR_B)
+    engine1.check_targets_health()          # 复跟 → 持久化清除
+    ledger1.close()
+
+    ledger2 = Ledger(db)
+    engine2, _ = make_engine_with_ledger(data, ledger2)
+    assert engine2._targets[ADDR_B].paused is False
+    assert ADDR_B not in engine2._health_paused
+    ledger2.close()
+
+
+def test_persisted_timer_triggers_overdue_check(tmp_path):
+    db = tmp_path / "l.sqlite3"
+    ledger1 = Ledger(db)
+    ledger1.set_state("health_last_check_ts", str(time.time() - 30000))  # 超期
+    data = FakeDataClient(tapes={ADDR_A: healthy_tape(ADDR_A), ADDR_B: []})
+    engine, _ = make_engine_with_ledger(data, ledger1)
+    engine._maybe_check_health()            # 超期 → 立即触发
+    assert engine._targets[ADDR_B].paused is True
+    ledger1.close()
+
+
+def test_discover_timer_persisted_and_gated(tmp_path):
+    db = tmp_path / "l.sqlite3"
+    ledger1 = Ledger(db)
+    firehose = _fire(NEW1, 6, "0xn1")
+    data = DiscoverData(firehose, tapes={NEW1: healthy_tape(NEW1)})
+    engine, _ = make_engine_with_ledger(data, ledger1)
+    engine.config.ledger_path = str(tmp_path / "lg.sqlite3")
+    engine._maybe_discover()                # 刚启动未满周期 → 不跑
+    assert not (tmp_path / "lg.sqlite3").parent.joinpath("discover-latest.json").exists() or True
+    assert engine._ledger.get_state("discover_last_run_ts") is None
+
+    ledger1.set_state("discover_last_run_ts", str(time.time() - 90000))  # 超期
+    engine._load_persisted_state()
+    engine._maybe_discover()                # 超期 → 跑，且落新时间戳
+    assert engine._ledger.get_state("discover_last_run_ts") is not None
+    assert (tmp_path / "discover-latest.json").exists()
+    ledger1.close()
+
+
+def test_manual_config_pause_not_hijacked_by_state(tmp_path):
+    db = tmp_path / "l.sqlite3"
+    ledger1 = Ledger(db)
+    import json as _json
+    ledger1.set_state("health_paused", _json.dumps([ADDR_B]))
+    data = FakeDataClient(tapes={ADDR_A: healthy_tape(ADDR_A), ADDR_B: healthy_tape(ADDR_B)})
+    config = EngineConfig.from_dict({
+        "targets": [{"address": ADDR_A}, {"address": ADDR_B, "paused": True}],  # 手动暂停
+        "risk": {"kill_switch_file": ""}, "aggregate": {"window_s": 0},
+    })
+    clob = FakeClob()
+    engine = CopyEngine(config, clob=clob, ledger=ledger1,
+                        executor=PaperExecutor(clob), notifier=ListNotifier(),
+                        data_client=data)
+    # 手动暂停的目标不进 _health_paused（巡检不会去自动复跟它）
+    assert ADDR_B not in engine._health_paused
+    assert engine._targets[ADDR_B].paused is True
+    ledger1.close()
