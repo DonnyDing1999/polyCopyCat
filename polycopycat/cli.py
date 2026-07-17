@@ -342,14 +342,33 @@ def cmd_report(args: argparse.Namespace) -> int:
             )
         )
         print(f"已实现盈亏: 累计 ${total_pnl:+.2f}，今日 ${today_pnl:+.2f}")
+
+        marks = _mark_positions(positions, args) if args.mark else {}
         print(f"\n## 当前持仓（{len(positions)} 个）")
         if not positions:
             print("（空仓）")
+        tot_cost = tot_val = 0.0
         for p in positions:
-            print(
+            label = p.title or "(标题缺失)"
+            line = (
                 f"  {p.size:>10.2f} 份 @ {p.avg_cost:.3f}  成本 ${p.cost:>8.2f}  "
-                f"已实现 ${p.realized_pnl:+8.2f}  [{p.outcome}] {p.title}"
+                f"已实现 ${p.realized_pnl:+8.2f}"
             )
+            if p.token_id in marks:
+                bid = marks[p.token_id]
+                val = p.size * bid
+                tot_cost += p.cost
+                tot_val += val
+                line += f"  现价 {bid:.3f} 市值 ${val:>7.2f} 浮盈亏 ${val - p.cost:+7.2f}"
+            line += f"  [{p.outcome}] {label}"
+            print(line)
+        if marks:
+            unrealized = tot_val - tot_cost
+            print(
+                f"  ── 持仓合计: 成本 ${tot_cost:.2f} 市值 ${tot_val:.2f} "
+                f"未实现浮盈亏 ${unrealized:+.2f}"
+            )
+            print(f"  ── 纸面总盈亏（已实现 + 未实现）: ${total_pnl + unrealized:+.2f}")
         quality = ledger.execution_quality()
         if quality.n_fills:
             print(f"\n## 执行质量（{quality.n_fills} 笔成交）")
@@ -387,6 +406,26 @@ def cmd_report(args: argparse.Namespace) -> int:
     finally:
         ledger.close()
     return 0
+
+
+def _mark_positions(positions, args) -> dict[str, float]:
+    """给每个持仓拉实时买一价（现在全平能拿回的价）做市值重估。
+
+    单个 token 取不到盘口就跳过（该仓不参与浮盈亏合计，避免用 0 价虚增亏损）。
+    """
+    from .engine.clob import ClobError, ClobReadClient
+
+    clob = ClobReadClient(base_url=args.clob_url)
+    marks: dict[str, float] = {}
+    for p in positions:
+        try:
+            book = clob.get_book(p.token_id)
+        except ClobError as exc:
+            logger.debug("持仓 %s 取盘口失败，跳过市值重估: %s", p.token_id[:12], exc)
+            continue
+        if book.bids:
+            marks[p.token_id] = book.bids[0].price
+    return marks
 
 
 def _print_signal_flow(ledger, quality) -> None:
@@ -740,6 +779,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_report.add_argument("--config", default="copycat.json", help="引擎配置文件路径")
     p_report.add_argument("--ledger", default=None, help="直接指定账本 sqlite 路径（优先于 --config）")
     p_report.add_argument("--limit", type=int, default=20, help="最近订单条数（默认 20）")
+    p_report.add_argument(
+        "--mark", action="store_true",
+        help="拉实时买一价给持仓做市值重估，显示浮盈亏与纸面总盈亏（需要网络）",
+    )
+    p_report.add_argument(
+        "--clob-url", default=None, help="CLOB 入口（--mark 用；默认官方/环境变量）",
+    )
     p_report.add_argument(
         "--by-target", action="store_true",
         help="按目标拆分：每个目标的已实现盈亏、累计买入、信号归属（评估谁值得跟）",

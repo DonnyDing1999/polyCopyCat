@@ -312,3 +312,35 @@ def test_migration_adds_source_column(tmp_path):
         assert migrated.target_event_summary()["0xt"]["recruits"] == 1
     finally:
         migrated.close()
+
+
+# ---- 元数据回填 ----
+
+def test_backfill_position_meta_fills_only_empty(ledger):
+    # 建两个持仓：一个缺 title/condition，一个已有 title
+    sid = _aged_signal(ledger, "0xm1", age_s=1)
+    empty_meta = OrderIntent(token_id="tokX", condition_id="", side="BUY", limit_price=0.5,
+                             size=100, ref_price=0.5, neg_risk=False, title="", outcome="Yes")
+    ledger.record_order(sid, empty_meta, mode="paper", status="filled",
+                        filled_size=100, avg_price=0.5)
+    sid2 = _aged_signal(ledger, "0xm2", age_s=1)
+    oi = OrderIntent(token_id="tokY", condition_id="0xhas", side="BUY", limit_price=0.5,
+                     size=50, ref_price=0.5, neg_risk=False, title="已有标题", outcome="Yes")
+    ledger.record_order(sid2, oi, mode="paper", status="filled", filled_size=50, avg_price=0.5)
+
+    n = ledger.backfill_position_meta({
+        "tokX": ("EWC 英雄联盟冠军", "0xcondX"),
+        "tokY": ("不该覆盖", "0xnope"),
+    })
+    assert n == 1  # 只有 tokX 被回填
+    by = {p.token_id: p for p in ledger.positions()}
+    assert by["tokX"].title == "EWC 英雄联盟冠军" and by["tokX"].condition_id == "0xcondX"
+    assert by["tokY"].title == "已有标题" and by["tokY"].condition_id == "0xhas"  # 原样
+
+
+def test_backfill_position_meta_noop_when_present(ledger):
+    sid = _aged_signal(ledger, "0xm3", age_s=1)
+    oi = OrderIntent(token_id="tokZ", condition_id="0xc", side="BUY", limit_price=0.5,
+                     size=10, ref_price=0.5, neg_risk=False, title="有", outcome="Yes")
+    ledger.record_order(sid, oi, mode="paper", status="filled", filled_size=10, avg_price=0.5)
+    assert ledger.backfill_position_meta({"tokZ": ("新", "0xnew")}) == 0

@@ -509,6 +509,14 @@ class CopyEngine:
                     continue
                 self._mirror.replace(address, {p.asset: p.size for p in positions})
                 logger.debug("镜像已刷新: %s 持有 %d 个仓位", _short(address), len(positions))
+                # 顺手回填账本里缺失的元数据（成交推送偶尔缺 title/conditionId）
+                meta = {
+                    p.asset: (p.title, p.condition_id)
+                    for p in positions
+                    if p.title or p.condition_id
+                }
+                if meta:
+                    self._ledger.backfill_position_meta(meta)
 
         if self.config.mode != "live" and self.config.auto_settle_resolved:
             self._settle_resolved_positions()

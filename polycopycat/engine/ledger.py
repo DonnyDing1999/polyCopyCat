@@ -319,6 +319,27 @@ class Ledger:
             )
         return realized
 
+    def backfill_position_meta(self, meta: dict) -> int:
+        """回填持仓表里缺失的 title / condition_id（成交推送偶尔缺元数据）。
+
+        meta: {token_id: (title, condition_id)}；只覆盖空字段，非空的不动。
+        返回实际更新的行数。
+        """
+        updated = 0
+        with self._lock:
+            for token_id, (title, condition_id) in meta.items():
+                cur = self._conn.execute(
+                    """UPDATE positions SET
+                         title = CASE WHEN COALESCE(title, '') = '' THEN ? ELSE title END,
+                         condition_id = CASE WHEN COALESCE(condition_id, '') = ''
+                                             THEN ? ELSE condition_id END
+                       WHERE token_id = ?
+                         AND (COALESCE(title, '') = '' OR COALESCE(condition_id, '') = '')""",
+                    (title or "", condition_id or "", token_id),
+                )
+                updated += cur.rowcount
+        return updated
+
     def sync_positions(self, positions) -> None:
         """实盘对账：用 Data API 持仓快照整体覆盖持仓表。
 
