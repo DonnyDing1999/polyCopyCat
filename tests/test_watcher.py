@@ -144,3 +144,25 @@ def test_add_address_baselines_before_reporting():
 
     watcher.poll_once()  # a3 出现新成交
     assert [t.transaction_hash for t in got] == ["0xnew"]
+
+
+def test_signal_source_tagging_per_channel():
+    """轮询→poll、实时→stream、回放→backfill；跨通道仍去重。"""
+    tape = [make_trade("0x2", 200), make_trade("0x1", 100)]
+    client = FakeClient({A1: [tape, [make_trade("0x3", 300)] + tape]})
+    got = []
+    watcher = TradeWatcher(client, [A1], on_trade=got.append, backfill=1)
+    watcher.poll_once()   # 基线 + 回放 1 条
+    assert [t.source for t in got] == ["backfill"]
+
+    # 实时通道先推 0x3
+    assert watcher.ingest(make_trade("0x3", 300)) is True
+    assert got[-1].source == "stream" and got[-1].transaction_hash == "0x3"
+
+    watcher.poll_once()   # 轮询再看到 0x3：已见，不重复上报
+    assert len(got) == 2
+
+    # 纯轮询发现的新成交带 poll 标
+    client.pages[A1] = [[make_trade("0x4", 400)] + tape]
+    watcher.poll_once()
+    assert got[-1].source == "poll" and got[-1].transaction_hash == "0x4"

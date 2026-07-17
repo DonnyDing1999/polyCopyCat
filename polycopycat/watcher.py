@@ -6,6 +6,7 @@ import logging
 import threading
 import time
 from collections import deque
+from dataclasses import replace
 from typing import Callable, Iterable
 
 from .data_api import DataApiClient, DataApiError, normalize_address
@@ -135,7 +136,8 @@ class TradeWatcher:
             while len(order) > _SEEN_CAP:
                 seen.discard(order.popleft())
         if self._on_trade:
-            self._on_trade(trade)
+            # 打上通道标（去重键不含 source，轮询稍后看到同笔不会重复上报）
+            self._on_trade(replace(trade, source="stream"))
         return True
 
     def _diff(self, address: str, trades: list[Trade]) -> list[Trade]:
@@ -158,7 +160,9 @@ class TradeWatcher:
             self._baselined.add(address)
             logger.info("%s 基线建立完成，已缓存最近 %d 条成交", address, len(fresh))
             # 页内新→旧，取最前面的 backfill 条即最近的 N 条
-            return fresh[: self.backfill] if self.backfill else []
+            if not self.backfill:
+                return []
+            return [replace(t, source="backfill") for t in fresh[: self.backfill]]
 
         if fresh and len(fresh) == len(trades):
             logger.warning(
@@ -166,4 +170,4 @@ class TradeWatcher:
                 "建议缩短轮询间隔或调大 page_size",
                 address, len(fresh),
             )
-        return fresh
+        return [replace(t, source="poll") for t in fresh]

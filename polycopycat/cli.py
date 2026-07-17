@@ -319,10 +319,12 @@ def cmd_report(args: argparse.Namespace) -> int:
     from .engine.ledger import Ledger
     from .engine.risk import day_start_ts
 
+    report_config = None
     ledger_path = args.ledger
     if ledger_path is None:
         try:
-            ledger_path = load_config(args.config).ledger_path
+            report_config = load_config(args.config)
+            ledger_path = report_config.ledger_path
         except ConfigError as exc:
             print(f"配置错误：{exc}", file=sys.stderr)
             return 1
@@ -364,6 +366,10 @@ def cmd_report(args: argparse.Namespace) -> int:
                 f"重试后成交 {quality.retried_fills} 笔"
             )
 
+        _print_signal_flow(ledger, quality)
+        if report_config is not None:
+            _print_pool_status(ledger, report_config)
+
         if args.by_target:
             _print_by_target(ledger)
 
@@ -381,6 +387,68 @@ def cmd_report(args: argparse.Namespace) -> int:
     finally:
         ledger.close()
     return 0
+
+
+def _print_signal_flow(ledger, quality) -> None:
+    """信号通道与被拦原因：哪条路在送信号、哪条路真正促成成交、拦下的都是什么。"""
+    sources = ledger.signal_source_counts()
+    reasons = ledger.filter_reason_stats(top=6)
+    if not sources and not reasons:
+        return
+    print("\n## 信号通道与过滤")
+    if sources:
+        total = sum(sources.values())
+        parts = " / ".join(
+            f"{name} {n} 条" for name, n in sorted(sources.items(), key=lambda kv: -kv[1])
+        )
+        print(f"  信号来源（共 {total}）: {parts}")
+    if quality.channels:
+        parts = " / ".join(
+            f"{ch.source} {ch.n_fills} 笔（中位 {ch.median_delay_s:.1f}s）"
+            for ch in quality.channels
+        )
+        print(f"  成交经由: {parts}")
+    if reasons:
+        print("  被拦原因 Top:")
+        for status, pattern, n in reasons:
+            print(f"    {n:>4}× {status:<12} {pattern}")
+
+
+def _print_pool_status(ledger, config) -> None:
+    """池子状态：每个目标的来源（配置/招募）、当前状态与被停历史。"""
+    import json as _json
+
+    from .engine.engine import _recruited_path, merge_recruited_targets
+
+    recruited_addresses: set[str] = set()
+    recruited_file = _recruited_path(config)
+    if recruited_file.exists():
+        try:
+            recruited_addresses = {
+                str(e.get("address", "")).lower()
+                for e in _json.loads(recruited_file.read_text(encoding="utf-8")) or []
+                if isinstance(e, dict)
+            }
+        except (OSError, ValueError):
+            pass
+    merge_recruited_targets(config)
+    events = ledger.target_event_summary()
+
+    print(f"\n## 池子状态（{len(config.targets)} 个目标）")
+    for target in config.targets:
+        event = events.get(target.address, {})
+        origin = "招募" if target.address in recruited_addresses else "配置"
+        if target.paused:
+            state = "⏸ 手动暂停"
+        elif event.get("last_kind") == "health_pause":
+            state = "⛔ 巡检暂停"
+        else:
+            state = "在跟"
+        line = f"  {_short(target.address)}  {origin}  {state:<6} 被停 {event.get('pauses', 0)} 次"
+        if event.get("last_kind") == "health_pause" and event.get("last_detail"):
+            line += f"  {event['last_detail'][:44]}"
+        print(line)
+    print("  （状态按账本事件推断；引擎重启会临时复跟至下一轮巡检）")
 
 
 def _print_by_target(ledger) -> None:

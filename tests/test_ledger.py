@@ -235,3 +235,80 @@ def test_execution_quality_excludes_redeem_and_unfilled(ledger):
     ledger.settle_position("tok1", 1.0, mode="paper")
     q = ledger.execution_quality()
     assert q.n_fills == 1
+
+
+# ---- 信号通道 / 过滤原因 / 事件档案 ----
+
+def test_signal_source_persisted_and_counted(ledger):
+    import dataclasses
+    trade = Trade(
+        proxy_wallet=ADDR, side="BUY", asset="tok1", condition_id="0xcond",
+        size=100, price=0.5, timestamp=int(time.time()), title="T", outcome="Yes",
+        transaction_hash="0xsrc", source="stream",
+    )
+    sid, _ = ledger.record_signal(
+        Signal(trade=trade, target=TargetConfig(address=ADDR), received_at=time.time())
+    )
+    trade2 = dataclasses.replace(trade, transaction_hash="0xsrc2", source="poll")
+    ledger.record_signal(
+        Signal(trade=trade2, target=TargetConfig(address=ADDR), received_at=time.time())
+    )
+    assert ledger.signal_source_counts() == {"stream": 1, "poll": 1}
+    # 成交经由通道拆分
+    ledger.record_order(sid, intent(size=100, limit=0.52), mode="paper", status="filled",
+                        filled_size=100, avg_price=0.51, slippage=0.01)
+    q = ledger.execution_quality()
+    assert len(q.channels) == 1
+    assert q.channels[0].source == "stream" and q.channels[0].n_fills == 1
+
+
+def test_filter_reason_stats_normalizes_numbers(ledger):
+    for i, detail in enumerate([
+        "信号已过期 146s（阈值 30s）",
+        "信号已过期 337s（阈值 30s）",
+        "目标成交金额 $5.00 低于阈值 $30.00",
+    ]):
+        sid = _aged_signal(ledger, f"0xf{i}", age_s=5)
+        ledger.update_signal(sid, "filtered", detail)
+    stats = ledger.filter_reason_stats()
+    assert stats[0] == ("filtered", "信号已过期 ~s（阈值 ~s）", 2)
+    assert stats[1][2] == 1
+
+
+def test_events_recorded_and_summarized(ledger):
+    a = "0x" + "a" * 40
+    ledger.record_event("health_pause", a, "窗口净亏损 $-100")
+    ledger.record_event("health_resume", a, "恢复合格")
+    ledger.record_event("health_pause", a, "又亏了")
+    ledger.record_event("recruit", "0x" + "b" * 40, "分88")
+    summary = ledger.target_event_summary()
+    assert summary[a]["pauses"] == 2
+    assert summary[a]["last_kind"] == "health_pause"
+    assert summary[a]["last_detail"] == "又亏了"
+    assert summary["0x" + "b" * 40]["recruits"] == 1
+
+
+def test_migration_adds_source_column(tmp_path):
+    import sqlite3 as _sq
+    db = tmp_path / "old.sqlite3"
+    conn = _sq.connect(db)
+    # 造一个没有 source 列、没有 events 表的老账本
+    conn.executescript("""
+        CREATE TABLE signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, trade_key TEXT UNIQUE NOT NULL,
+            created_ts REAL NOT NULL, trade_ts INTEGER NOT NULL, target TEXT NOT NULL,
+            condition_id TEXT NOT NULL, token_id TEXT NOT NULL, title TEXT, outcome TEXT,
+            side TEXT NOT NULL, ref_price REAL NOT NULL, ref_size REAL NOT NULL,
+            ref_notional REAL NOT NULL, status TEXT NOT NULL, detail TEXT DEFAULT '');
+        INSERT INTO signals (trade_key, created_ts, trade_ts, target, condition_id,
+            token_id, side, ref_price, ref_size, ref_notional, status)
+        VALUES ('k', 1, 1, '0xt', '0xc', 'tok', 'BUY', 0.5, 10, 5, 'executed');
+    """)
+    conn.commit(); conn.close()
+    migrated = Ledger(db)
+    try:
+        assert migrated.signal_source_counts() == {"未知": 1}  # 老数据 source 为空
+        migrated.record_event("recruit", "0xt", "ok")          # events 表已建
+        assert migrated.target_event_summary()["0xt"]["recruits"] == 1
+    finally:
+        migrated.close()

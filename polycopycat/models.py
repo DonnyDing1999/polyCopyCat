@@ -44,6 +44,7 @@ class Trade:
     outcome_index: int = -1
     transaction_hash: str = ""
     trader_name: str = ""
+    source: str = ""     # 信号通道：stream（实时推送）/ poll（轮询）/ backfill（启动回放）；不参与去重键
 
     @classmethod
     def from_api(cls, raw: dict[str, Any]) -> "Trade":

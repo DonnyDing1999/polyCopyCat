@@ -574,6 +574,7 @@ class CopyEngine:
                 if address in self._health_paused and self.config.health.auto_resume:
                     target.paused = False
                     self._health_paused.discard(address)
+                    self._ledger.record_event("health_resume", address, "恢复合格，自动复跟")
                     self._notifier.send(
                         f"✅ 健康巡检：{_short(address)} 已恢复合格，自动复跟"
                     )
@@ -587,6 +588,7 @@ class CopyEngine:
             elif self.config.health.auto_pause:
                 target.paused = True
                 self._health_paused.add(address)
+                self._ledger.record_event("health_pause", address, reasons)
                 self._notifier.send(
                     f"⚠️ 健康巡检：{_short(address)} 命中排除规则（{reasons}），"
                     "已自动暂停跟单（镜像继续维护，恢复合格自动复跟）"
@@ -698,6 +700,10 @@ class CopyEngine:
                 "score": verdict.score,
             }
             recruited.append(target.address)
+            self._ledger.record_event(
+                "recruit", target.address,
+                f"分{verdict.score:.0f}，ratio {health.recruit_ratio}/单笔 ${health.recruit_max_per_trade_usdc:.0f}",
+            )
             if self._on_new_target is not None:
                 try:
                     self._on_new_target(target.address)

@@ -314,3 +314,24 @@ def test_merge_recruited_targets_restores_on_restart(tmp_path):
                         executor=PaperExecutor(clob), notifier=ListNotifier(),
                         data_client=DiscoverData([], tapes={}))
     assert NEW1 in engine._recruited
+
+
+def test_health_actions_recorded_as_events():
+    data = FakeDataClient(tapes={ADDR_A: healthy_tape(ADDR_A), ADDR_B: []})
+    engine, _ = make_engine(data)
+    engine.check_targets_health()          # B 被停
+    data.tapes[ADDR_B] = healthy_tape(ADDR_B)
+    engine.check_targets_health()          # B 复跟
+    summary = engine._ledger.target_event_summary()
+    assert summary[ADDR_B]["pauses"] == 1
+    assert summary[ADDR_B]["last_kind"] == "health_resume"
+
+
+def test_recruit_recorded_as_event(tmp_path):
+    firehose = _fire(NEW1, 6, "0xn1")
+    data = DiscoverData(firehose, tapes={NEW1: healthy_tape(NEW1)})
+    engine, _ = make_engine(data, auto_recruit=True)
+    engine.config.ledger_path = str(tmp_path / "ledger.sqlite3")
+    engine.discover_candidates_once()
+    summary = engine._ledger.target_event_summary()
+    assert summary[NEW1]["recruits"] == 1

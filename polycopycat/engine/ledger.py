@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 import threading
 import time
@@ -35,8 +36,17 @@ CREATE TABLE IF NOT EXISTS signals (
     ref_size REAL NOT NULL,
     ref_notional REAL NOT NULL,
     status TEXT NOT NULL,
+    detail TEXT DEFAULT '',
+    source TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL NOT NULL,
+    kind TEXT NOT NULL,
+    target TEXT NOT NULL,
     detail TEXT DEFAULT ''
 );
+CREATE INDEX IF NOT EXISTS idx_events_target ON events(target);
 CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     signal_id INTEGER NOT NULL,
@@ -88,6 +98,16 @@ class PositionRow:
 
 
 @dataclass(frozen=True)
+class ChannelQuality:
+    """单个信号通道（stream/poll/backfill）的成交表现。"""
+
+    source: str
+    n_fills: int
+    median_delay_s: float
+    avg_delay_s: float
+
+
+@dataclass(frozen=True)
 class ExecutionQuality:
     """执行质量汇总：延迟、相对目标的价差、成交完成度（见 execution_quality）。"""
 
@@ -99,6 +119,7 @@ class ExecutionQuality:
     slippage_cost: float = 0.0   # Σ(价差 × 成交量)，多付的钱
     full_fills: int = 0
     retried_fills: int = 0
+    channels: tuple[ChannelQuality, ...] = ()  # 按信号通道拆分（哪条路真正促成了成交）
 
 
 @dataclass(frozen=True)
@@ -143,6 +164,10 @@ class Ledger:
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(_SCHEMA)
+            # 老账本迁移：signals 补 source 列（CREATE IF NOT EXISTS 不会给已有表加列）
+            columns = {r["name"] for r in self._conn.execute("PRAGMA table_info(signals)")}
+            if "source" not in columns:
+                self._conn.execute("ALTER TABLE signals ADD COLUMN source TEXT DEFAULT ''")
 
     def close(self) -> None:
         with self._lock:
@@ -157,13 +182,14 @@ class Ledger:
             cur = self._conn.execute(
                 """INSERT OR IGNORE INTO signals
                    (trade_key, created_ts, trade_ts, target, condition_id, token_id,
-                    title, outcome, side, ref_price, ref_size, ref_notional, status)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    title, outcome, side, ref_price, ref_size, ref_notional, status, source)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     repr(trade.key), signal.received_at, trade.timestamp,
                     signal.target.address, trade.condition_id, trade.asset,
                     trade.title, trade.outcome, trade.side,
                     trade.price, trade.size, trade.notional, "received",
+                    getattr(trade, "source", ""),
                 ),
             )
             if cur.rowcount == 0:
@@ -381,7 +407,7 @@ class Ledger:
         """
         with self._lock:
             rows = self._conn.execute(
-                """SELECT o.created_ts - s.trade_ts AS delay_s,
+                """SELECT o.created_ts - s.trade_ts AS delay_s, s.source AS source,
                           o.slippage, o.filled_size, o.req_size, o.detail
                    FROM orders o JOIN signals s ON o.signal_id = s.id
                    WHERE o.side IN ('BUY', 'SELL') AND o.filled_size > 0"""
@@ -390,6 +416,18 @@ class Ledger:
             return ExecutionQuality()
         delays = sorted(max(0.0, r["delay_s"]) for r in rows)
         gaps = [r["slippage"] for r in rows]
+        by_source: dict[str, list[float]] = {}
+        for r in rows:
+            by_source.setdefault(r["source"] or "未知", []).append(max(0.0, r["delay_s"]))
+        channels = tuple(
+            ChannelQuality(
+                source=source,
+                n_fills=len(ds),
+                median_delay_s=sorted(ds)[len(ds) // 2],
+                avg_delay_s=sum(ds) / len(ds),
+            )
+            for source, ds in sorted(by_source.items(), key=lambda kv: -len(kv[1]))
+        )
         return ExecutionQuality(
             n_fills=len(rows),
             median_delay_s=delays[len(delays) // 2],
@@ -399,7 +437,69 @@ class Ledger:
             slippage_cost=sum(r["slippage"] * r["filled_size"] for r in rows),
             full_fills=sum(1 for r in rows if r["filled_size"] >= r["req_size"] - 1e-9),
             retried_fills=sum(1 for r in rows if "重试" in (r["detail"] or "")),
+            channels=channels,
         )
+
+    def signal_source_counts(self) -> dict[str, int]:
+        """各信号通道送来多少条（含被过滤的），衡量通道的真实贡献。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT COALESCE(NULLIF(source, ''), '未知') AS s, COUNT(*) AS n "
+                "FROM signals GROUP BY s"
+            ).fetchall()
+        return {r["s"]: r["n"] for r in rows}
+
+    def filter_reason_stats(self, top: int = 6) -> list[tuple[str, str, int]]:
+        """被拦信号的原因分布（数字归一后聚类），回答「95 个 filtered 都是什么」。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT status, detail FROM signals "
+                "WHERE status IN ('filtered', 'skipped') AND detail != ''"
+            ).fetchall()
+        counter: dict[tuple[str, str], int] = {}
+        for r in rows:
+            pattern = re.sub(r"\d[\d,.]*", "~", r["detail"])[:48]
+            key = (r["status"], pattern)
+            counter[key] = counter.get(key, 0) + 1
+        ranked = sorted(counter.items(), key=lambda kv: -kv[1])[: max(1, int(top))]
+        return [(status, pattern, n) for (status, pattern), n in ranked]
+
+    # ---- 事件（巡检/招募动作的持久档案，复盘「谁被停过、为什么」用）----
+
+    def record_event(self, kind: str, target: str, detail: str = "") -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO events (ts, kind, target, detail) VALUES (?,?,?,?)",
+                (time.time(), kind, target, detail),
+            )
+
+    def target_event_summary(self) -> dict[str, dict]:
+        """每个目标的事件摘要：被停次数、招募标记、最近一次事件。"""
+        with self._lock:
+            counts = self._conn.execute(
+                """SELECT target,
+                          SUM(CASE WHEN kind = 'health_pause' THEN 1 ELSE 0 END) AS pauses,
+                          SUM(CASE WHEN kind = 'recruit' THEN 1 ELSE 0 END) AS recruits
+                   FROM events GROUP BY target"""
+            ).fetchall()
+            latest = self._conn.execute(
+                """SELECT e.target, e.kind, e.detail, e.ts FROM events e
+                   JOIN (SELECT target, MAX(id) AS mid FROM events GROUP BY target) m
+                     ON e.id = m.mid"""
+            ).fetchall()
+        summary: dict[str, dict] = {}
+        for r in counts:
+            summary[r["target"]] = {
+                "pauses": r["pauses"], "recruits": r["recruits"],
+                "last_kind": "", "last_detail": "", "last_ts": 0.0,
+            }
+        for r in latest:
+            entry = summary.setdefault(
+                r["target"],
+                {"pauses": 0, "recruits": 0, "last_kind": "", "last_detail": "", "last_ts": 0.0},
+            )
+            entry.update(last_kind=r["kind"], last_detail=r["detail"], last_ts=r["ts"])
+        return summary
 
     def recent_orders(self, limit: int = 20) -> list[sqlite3.Row]:
         return self._conn.execute(
