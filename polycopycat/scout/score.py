@@ -41,6 +41,10 @@ class ScoutConfig:
     arb_min_win_rate: float = 0.9          # 胜率高于此才触发套利嫌疑判定
     arb_min_high_close_ratio: float = 0.85  # 卖出里贴近1.0平仓占比高于此
     arb_min_sample: int = 20               # 套利指纹判定所需的最少配对卖出数
+    # 慢速做市/流动性提供：同一 token 反复双向成交、薄点差吃价差（快进快出抓不到的慢速版）
+    max_churn_notional_ratio: float = 0.35  # 深度双向循环 token 成交额占比超此 = 做市嫌疑
+    mm_thin_spread: float = 0.06            # 且双向点差薄于此（吃价差而非方向进出）
+    mm_min_trades: int = 40                 # 做市判定所需的最少成交笔数（样本足才可信）
     quick_window_s: float = DEFAULT_QUICK_WINDOW_S
     request_delay_s: float = 0.15         # 逐地址评估时的限速间隔
 
@@ -172,6 +176,17 @@ def evaluate(
         reasons.append(
             f"疑似做市/套利（{config.quick_window_s / 60:.0f} 分钟内快进快出占比 "
             f"{stats.quick_flip_ratio:.0%}）"
+        )
+    spread = stats.median_two_side_spread
+    if (
+        stats.n_trades >= config.mm_min_trades
+        and stats.churn_notional_ratio > config.max_churn_notional_ratio
+        and spread is not None
+        and spread <= config.mm_thin_spread
+    ):
+        reasons.append(
+            f"疑似慢速做市/流动性提供（{stats.churn_notional_ratio:.0%} 成交额在同一 token "
+            f"反复双向循环、点差仅 {spread:.3f}——吃价差而非看方向）"
         )
     if stats.trades_per_day > config.max_trades_per_day:
         reasons.append(

@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 
 from ..models import Trade
 
+_MM_MIN_SIDE = 2  # 同一 token 买/卖各达此次数才算「深度双向循环」（做市）
+
 DEFAULT_QUICK_WINDOW_S = 600.0
 DEFAULT_HIGH_CLOSE_PRICE = 0.90  # 卖价高于此视为「赢面已定才平仓」（套利/对冲指纹）
 
@@ -41,6 +43,10 @@ class TraderStats:
     last_ts: int = 0
     median_holding_s: float = 0.0
     holdings_s: list[float] = field(default_factory=list, repr=False)
+    # 慢速做市/流动性提供指纹（从流水按 token 统计，与持仓时长无关）
+    notional_total: float = 0.0        # 总成交额（买+卖）
+    notional_churn: float = 0.0        # 「深度双向循环」token 上的成交额（买≥2且卖≥2）
+    two_side_spreads: list[float] = field(default_factory=list, repr=False)  # 双向token的卖均价-买均价
 
     @property
     def win_rate(self) -> float | None:
@@ -55,6 +61,16 @@ class TraderStats:
     def high_close_ratio(self) -> float:
         """配对卖出里「贴近1.0平仓」的占比——高得离谱=只兑现赢面已定的腿。"""
         return self.high_close_sells / self.matched_sells if self.matched_sells else 0.0
+
+    @property
+    def churn_notional_ratio(self) -> float:
+        """成交额里花在「深度双向循环 token」上的占比——高=慢速做市/流动性提供。"""
+        return self.notional_churn / self.notional_total if self.notional_total else 0.0
+
+    @property
+    def median_two_side_spread(self) -> float | None:
+        """双向成交 token 的卖均价-买均价中位数；薄(接近0)=吃点差做市，宽=真方向进出。"""
+        return statistics.median(self.two_side_spreads) if self.two_side_spreads else None
 
     @property
     def trades_per_day(self) -> float:
@@ -75,6 +91,8 @@ def replay(
     book: dict[str, list[float]] = {}
     markets: set[str] = set()
     days: set[str] = set()
+    # 按 token 累计买/卖笔数与金额，用于慢速做市指纹（与持仓/时长无关）
+    side_agg: dict[str, dict] = {}
 
     for trade in ordered:
         if trade.side not in ("BUY", "SELL") or trade.size <= 0 or trade.price <= 0:
@@ -88,6 +106,14 @@ def replay(
         if stats.n_trades == 1:
             stats.first_ts = trade.timestamp
         stats.last_ts = trade.timestamp
+
+        agg = side_agg.setdefault(
+            trade.asset, {"bn": 0, "sn": 0, "bsz": 0.0, "bntl": 0.0, "ssz": 0.0, "sntl": 0.0}
+        )
+        if trade.side == "BUY":
+            agg["bn"] += 1; agg["bsz"] += trade.size; agg["bntl"] += trade.notional
+        else:
+            agg["sn"] += 1; agg["ssz"] += trade.size; agg["sntl"] += trade.notional
 
         size, avg_cost, entry_ts = book.get(trade.asset, [0.0, 0.0, 0.0])
         if trade.side == "BUY":
@@ -123,4 +149,16 @@ def replay(
     stats.active_days = len(days)
     stats.avg_trade_usdc = stats.notional / stats.n_trades if stats.n_trades else 0.0
     stats.median_holding_s = statistics.median(stats.holdings_s) if stats.holdings_s else 0.0
+
+    # 慢速做市指纹：深度双向循环 token（买≥2且卖≥2）的成交额占比 + 双向点差
+    total_ntl = churn_ntl = 0.0
+    for agg in side_agg.values():
+        vol = agg["bntl"] + agg["sntl"]
+        total_ntl += vol
+        if agg["bn"] >= _MM_MIN_SIDE and agg["sn"] >= _MM_MIN_SIDE:
+            churn_ntl += vol
+        if agg["bn"] > 0 and agg["sn"] > 0 and agg["bsz"] > 0 and agg["ssz"] > 0:
+            stats.two_side_spreads.append(agg["sntl"] / agg["ssz"] - agg["bntl"] / agg["bsz"])
+    stats.notional_total = total_ntl
+    stats.notional_churn = churn_ntl
     return stats

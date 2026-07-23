@@ -329,3 +329,68 @@ def test_high_close_ratio_metric():
                             transaction_hash=f"s{i}"))
     stats=replay(wallet,trades)
     assert stats.high_close_sells == 2 and stats.high_close_ratio == 0.5
+
+
+# ---- 慢速做市/流动性提供排除 ----
+
+def _tape_market_maker(wallet, n_tokens=15, cycles=3, spread=0.03):
+    """做市：每个 token 反复买卖多轮，薄点差。"""
+    import time as _t
+    now=int(_t.time()); trades=[]; k=0
+    for tk in range(n_tokens):
+        asset=f"mm{tk}"; cond=f"0xmm{tk}"
+        for cyc in range(cycles):
+            trades.append(Trade(proxy_wallet=wallet,side="BUY",asset=asset,condition_id=cond,
+                                size=200,price=0.50,timestamp=now-(k:=k+1)*300,title="M",
+                                outcome="Y",transaction_hash=f"b{tk}_{cyc}"))
+            trades.append(Trade(proxy_wallet=wallet,side="SELL",asset=asset,condition_id=cond,
+                                size=200,price=0.50+spread,timestamp=now-(k:=k+1)*300,title="M",
+                                outcome="Y",transaction_hash=f"s{tk}_{cyc}"))
+    return trades
+
+
+def test_slow_market_maker_excluded():
+    """同一 token 反复双向循环、薄点差、慢速（持仓时长长）→ 做市排除。"""
+    wallet="0x"+"e"*40
+    # 拉大持仓间隔避免被 quick_flip 抓（证明是新规则抓的）
+    stats=replay(wallet,_tape_market_maker(wallet,n_tokens=15,cycles=3,spread=0.03))
+    assert stats.churn_notional_ratio > 0.9
+    assert stats.median_two_side_spread is not None and stats.median_two_side_spread < 0.06
+    v=evaluate(stats,[],ScoutConfig())
+    assert not v.eligible
+    assert any("慢速做市" in r for r in v.reasons)
+
+
+def test_directional_with_wide_spread_not_mm():
+    """双向成交但点差宽（真进出）→ 不判做市。"""
+    wallet="0x"+"d"*40
+    stats=replay(wallet,_tape_market_maker(wallet,n_tokens=15,cycles=3,spread=0.25))
+    assert stats.churn_notional_ratio > 0.9   # 也在双向循环
+    assert stats.median_two_side_spread > 0.06  # 但点差宽
+    v=evaluate(stats,[],ScoutConfig())
+    assert not any("慢速做市" in r for r in v.reasons)  # 点差宽不算做市
+
+
+def test_single_roundtrip_not_mm():
+    """每个 token 只买一次卖一次（非深度循环）→ 不算做市。"""
+    wallet="0x"+"a"*40
+    import time as _t
+    now=int(_t.time()); trades=[]
+    for i in range(50):
+        trades.append(Trade(proxy_wallet=wallet,side="BUY",asset=f"t{i}",condition_id=f"c{i}",
+                            size=100,price=0.5,timestamp=now-i*600-300,title="M",outcome="Y",
+                            transaction_hash=f"b{i}"))
+        trades.append(Trade(proxy_wallet=wallet,side="SELL",asset=f"t{i}",condition_id=f"c{i}",
+                            size=100,price=0.55,timestamp=now-i*600,title="M",outcome="Y",
+                            transaction_hash=f"s{i}"))
+    stats=replay(wallet,trades)
+    assert stats.churn_notional_ratio == 0.0   # 每 token 只买1卖1，无深度循环
+    v=evaluate(stats,[],ScoutConfig())
+    assert not any("慢速做市" in r for r in v.reasons)
+
+
+def test_churn_metrics_computed():
+    wallet="0x"+"b"*40
+    stats=replay(wallet,_tape_market_maker(wallet,n_tokens=5,cycles=2,spread=0.02))
+    assert 0.99 < stats.churn_notional_ratio <= 1.0
+    assert abs(stats.median_two_side_spread - 0.02) < 1e-6
