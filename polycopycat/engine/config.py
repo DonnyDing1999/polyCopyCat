@@ -98,7 +98,10 @@ class FilterConfig:
 
     min_target_notional_usdc: float = 10.0  # 目标成交金额低于此不跟（尘埃单）
     max_signal_age_s: float = 30.0          # 信号超龄不跟（价格早已走掉）
-    long_horizon_age_s: float | None = 120.0  # 长线市场放宽后的时效上限；null 关闭分级
+    # 长线市场放宽后的时效上限；null 关闭分级。默认 300 是拿数据源实测定的：
+    # data-api /trades 从成交到可查中位滞后约 160s、P90 约 283s（实时流不覆盖的
+    # 成交只能靠轮询捡），闸门低于这个数就等于把长线信号成批扔掉。
+    long_horizon_age_s: float | None = 300.0
     long_horizon_days: float = 7.0            # 距市场结束 ≥ 此天数才算长线
     follow_sells: bool = True               # 是否跟随卖出（需要持仓镜像）
     skip_title_patterns: list[str] = field(default_factory=list)  # 市场标题命中即不跟（短期盘）
@@ -222,6 +225,9 @@ class HealthConfig:
     recruit_ratio: float = 0.05           # 招募目标的跟单比例（比常规目标保守）
     recruit_max_per_trade_usdc: float = 25.0  # 招募目标的单笔上限
     recruit_max_targets: int = 15         # 目标总数上限（配置 + 招募），防无限膨胀
+    # 永不招募的地址：scout 打分看不出问题、但人工判定不该跟的（如只做当日盘、
+    # 信号必然过期）。启动时也会把已在招募档案里的黑名单地址剔出去。
+    recruit_blocklist: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.check_interval_s in (None, 0, 0.0):
@@ -255,6 +261,9 @@ class HealthConfig:
             "health.recruit_max_per_trade_usdc", self.recruit_max_per_trade_usdc, allow_none=False
         )
         self.recruit_max_targets = max(1, int(self.recruit_max_targets))
+        if isinstance(self.recruit_blocklist, str):
+            raise ConfigError("health.recruit_blocklist 应为地址数组，不是字符串")
+        self.recruit_blocklist = [normalize_address(a) for a in (self.recruit_blocklist or [])]
 
 
 @dataclass

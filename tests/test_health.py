@@ -316,6 +316,41 @@ def test_merge_recruited_targets_restores_on_restart(tmp_path):
     assert NEW1 in engine._recruited
 
 
+def test_blocklist_blocks_recruit(tmp_path):
+    """scout 打分合格、但人工拉黑的地址永不进池。"""
+    firehose = _fire(NEW1, 6, "0xn1")
+    data = DiscoverData(firehose, tapes={NEW1: healthy_tape(NEW1)})
+    engine, _ = make_engine(data, auto_recruit=True, recruit_blocklist=[NEW1.upper()])
+    engine.config.ledger_path = str(tmp_path / "ledger.sqlite3")
+
+    assert engine.discover_candidates_once() == 1  # 仍算合格候选，只是不招
+    assert NEW1 not in engine._targets
+    assert not (tmp_path / "recruited.json").exists()
+
+
+def test_blocklist_evicts_already_recruited_on_restart(tmp_path):
+    """已在招募档案里的地址，拉黑后重启即剔出，不再并回。"""
+    from polycopycat.engine.engine import merge_recruited_targets
+    import json as _json
+    (tmp_path / "recruited.json").write_text(_json.dumps([
+        {"address": NEW1, "ratio": 0.05, "max_per_trade_usdc": 25},
+        {"address": NEW2, "ratio": 0.05, "max_per_trade_usdc": 25},
+    ]))
+    config = EngineConfig.from_dict({
+        "targets": [{"address": ADDR_A}],
+        "health": {"recruit_blocklist": [NEW1]},
+        "ledger_path": str(tmp_path / "ledger.sqlite3"),
+    })
+    assert merge_recruited_targets(config) == [NEW2]
+    assert {t.address for t in config.targets} == {ADDR_A, NEW2}
+    # 招募身份也不再认领，下次落盘就把它从档案里彻底洗掉
+    engine = CopyEngine(config, clob=FakeClob(), ledger=Ledger(":memory:"),
+                        executor=PaperExecutor(FakeClob()), notifier=ListNotifier(),
+                        data_client=DiscoverData([], tapes={}))
+    assert NEW1 not in engine._recruited
+    assert NEW2 in engine._recruited
+
+
 def test_health_actions_recorded_as_events():
     data = FakeDataClient(tapes={ADDR_A: healthy_tape(ADDR_A), ADDR_B: []})
     engine, _ = make_engine(data)

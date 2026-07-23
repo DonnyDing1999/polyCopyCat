@@ -63,7 +63,9 @@ def merge_recruited_targets(config: EngineConfig) -> list[str]:
     if not isinstance(entries, list):
         return []
     existing = {t.address for t in config.targets}
+    blocked = set(config.health.recruit_blocklist)
     added: list[str] = []
+    dropped: list[str] = []
     for entry in entries:
         if not isinstance(entry, dict):
             continue
@@ -77,6 +79,9 @@ def merge_recruited_targets(config: EngineConfig) -> list[str]:
             )
         except Exception:  # noqa: BLE001 —— 单条损坏不拖累其余
             continue
+        if target.address in blocked:
+            dropped.append(target.address)
+            continue
         if target.address in existing:
             continue
         config.targets.append(target)
@@ -84,6 +89,8 @@ def merge_recruited_targets(config: EngineConfig) -> list[str]:
         added.append(target.address)
     if added:
         logger.info("已并回 %d 个历史招募目标: %s", len(added), ", ".join(_short(a) for a in added))
+    if dropped:
+        logger.info("招募档案里 %d 个地址在黑名单，已剔除: %s", len(dropped), ", ".join(_short(a) for a in dropped))
     return added
 
 
@@ -744,11 +751,15 @@ class CopyEngine:
         if self.config.mode != "paper":
             logger.warning("auto_recruit 仅纸面模式生效，实盘模式忽略（%d 个合格候选）", len(eligible))
             return []
+        blocked = set(health.recruit_blocklist)
         recruited: list[str] = []
         for verdict in eligible:  # scout 已按分数降序
             if len(self._targets) >= health.recruit_max_targets:
                 logger.info("目标总数已达上限 %d，本轮不再招募", health.recruit_max_targets)
                 break
+            if verdict.address in blocked:
+                logger.info("候选 %s 在黑名单，跳过招募", _short(verdict.address))
+                continue
             target = TargetConfig(
                 address=verdict.address,
                 ratio=health.recruit_ratio,

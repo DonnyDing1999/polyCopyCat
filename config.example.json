@@ -20,7 +20,7 @@
   "filters": {
     "min_target_notional_usdc": 50,
     "max_signal_age_s": 30,
-    "long_horizon_age_s": 120,
+    "long_horizon_age_s": 300,
     "long_horizon_days": 7,
     "follow_sells": true,
     "skip_title_patterns": []
@@ -50,7 +50,8 @@
     "auto_recruit": false,
     "recruit_ratio": 0.05,
     "recruit_max_per_trade_usdc": 25,
-    "recruit_max_targets": 15
+    "recruit_max_targets": 15,
+    "recruit_blocklist": []
   },
   "watch": {
     "stream": true,

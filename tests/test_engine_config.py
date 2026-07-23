@@ -70,6 +70,16 @@ def test_broken_json(tmp_path):
         load_config(path)
 
 
+def test_recruit_blocklist_normalized():
+    config = EngineConfig.from_dict(minimal(health={"recruit_blocklist": ["0x" + "B" * 40]}))
+    assert config.health.recruit_blocklist == ["0x" + "b" * 40]
+
+
+def test_recruit_blocklist_rejects_bare_string():
+    with pytest.raises(ConfigError, match="地址数组"):
+        EngineConfig.from_dict(minimal(health={"recruit_blocklist": ADDR}))
+
+
 def test_unknown_keys_only_warn(tmp_path):
     path = tmp_path / "ok.json"
     path.write_text(json.dumps(minimal(unknown_top=1, risk={"whatever": 2})), encoding="utf-8")
