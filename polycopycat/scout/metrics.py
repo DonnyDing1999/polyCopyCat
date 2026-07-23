@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from ..models import Trade
 
 DEFAULT_QUICK_WINDOW_S = 600.0
+DEFAULT_HIGH_CLOSE_PRICE = 0.90  # 卖价高于此视为「赢面已定才平仓」（套利/对冲指纹）
 
 
 @dataclass
@@ -29,6 +30,7 @@ class TraderStats:
     matched_sells: int = 0    # 能与窗口内买入配对的卖出（战绩可信的部分）
     unmatched_sells: int = 0  # 平的是窗口外建的仓，盈亏未知
     wins: int = 0             # 配对卖出中卖价高于持仓均价的笔数
+    high_close_sells: int = 0 # 配对卖出中卖价≥高价阈值的笔数（几乎不割肉=套利/对冲嫌疑）
     quick_flips: int = 0      # 配对卖出中持仓时长低于阈值的笔数
     realized_pnl: float = 0.0
     notional: float = 0.0
@@ -50,6 +52,11 @@ class TraderStats:
         return self.quick_flips / self.matched_sells if self.matched_sells else 0.0
 
     @property
+    def high_close_ratio(self) -> float:
+        """配对卖出里「贴近1.0平仓」的占比——高得离谱=只兑现赢面已定的腿。"""
+        return self.high_close_sells / self.matched_sells if self.matched_sells else 0.0
+
+    @property
     def trades_per_day(self) -> float:
         return self.n_trades / max(1, self.active_days)
 
@@ -59,6 +66,7 @@ def replay(
     trades: list[Trade],
     *,
     quick_window_s: float = DEFAULT_QUICK_WINDOW_S,
+    high_close_price: float = DEFAULT_HIGH_CLOSE_PRICE,
 ) -> TraderStats:
     """按时间回放成交带（输入顺序不限，内部会排序）。"""
     stats = TraderStats(address=address.lower())
@@ -99,6 +107,8 @@ def replay(
         stats.realized_pnl += closable * (trade.price - avg_cost)
         if trade.price > avg_cost:
             stats.wins += 1
+        if trade.price >= high_close_price:
+            stats.high_close_sells += 1
         holding = max(0.0, trade.timestamp - entry_ts)
         stats.holdings_s.append(holding)
         if holding < quick_window_s:

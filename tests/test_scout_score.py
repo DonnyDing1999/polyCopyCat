@@ -255,3 +255,77 @@ def test_health_base_exclusions_still_apply():
         replay(wallet, []), [], [], ScoutConfig()
     )
     assert not verdict.eligible  # 空成交带 → 样本不足
+
+
+# ---- 跨场馆套利单腿指纹排除 ----
+
+def _tape_high_close(wallet, n_win, sell_price, buy_price=0.5, markets=25):
+    """造 n_win 笔「买入后高价平仓」的赢单，跨多个市场，胜率100%。"""
+    import time as _t
+    now = int(_t.time())
+    trades = []
+    for i in range(n_win):
+        asset = f"tok{i}"; cond = f"0xc{i % markets}"
+        trades.append(Trade(proxy_wallet=wallet, side="BUY", asset=asset, condition_id=cond,
+                            size=200, price=buy_price, timestamp=now - i*7200 - 3600,
+                            title="M", outcome="Yes", transaction_hash=f"0xb{i}"))
+        trades.append(Trade(proxy_wallet=wallet, side="SELL", asset=asset, condition_id=cond,
+                            size=200, price=sell_price, timestamp=now - i*7200,
+                            title="M", outcome="Yes", transaction_hash=f"0xs{i}"))
+    return trades
+
+
+def test_arb_single_leg_excluded():
+    """胜率100% + 全在0.95平仓 + 大样本 → 疑似套利单腿，排除。"""
+    wallet = "0x" + "3" * 40
+    stats = replay(wallet, _tape_high_close(wallet, 30, sell_price=0.95))
+    assert stats.high_close_ratio == 1.0 and stats.win_rate == 1.0
+    v = evaluate(stats, [], ScoutConfig())
+    assert not v.eligible
+    assert any("套利单腿" in r for r in v.reasons)
+
+
+def test_directional_winner_not_flagged_as_arb():
+    """真方向性赢家：胜率72%、卖价分散 → 不该被套利规则误杀。"""
+    wallet = "0x" + "f" * 40
+    import time as _t
+    now = int(_t.time()); trades=[]
+    # 40 笔：29 赢（卖价0.6-0.8）、11 亏（卖价0.3），胜率72%，高价平仓占比低
+    for i in range(40):
+        asset=f"t{i}"; cond=f"0xc{i%20}"; win = i % 10 < 7
+        trades.append(Trade(proxy_wallet=wallet, side="BUY", asset=asset, condition_id=cond,
+                            size=200, price=0.5, timestamp=now-i*7200-3600, title="M",
+                            outcome="Yes", transaction_hash=f"0xb{i}"))
+        trades.append(Trade(proxy_wallet=wallet, side="SELL", asset=asset, condition_id=cond,
+                            size=200, price=(0.70 if win else 0.30), timestamp=now-i*7200,
+                            title="M", outcome="Yes", transaction_hash=f"0xs{i}"))
+    stats = replay(wallet, trades)
+    assert stats.high_close_ratio == 0.0  # 卖价都<0.9
+    v = evaluate(stats, [], ScoutConfig())
+    assert not any("套利单腿" in r for r in v.reasons)  # 不被套利规则命中
+
+
+def test_arb_rule_needs_sample():
+    """样本不足（<20 配对卖出）时套利规则不触发，避免误杀小样本。"""
+    wallet = "0x" + "7" * 40
+    stats = replay(wallet, _tape_high_close(wallet, 12, sell_price=0.97))
+    assert stats.win_rate == 1.0 and stats.high_close_ratio == 1.0
+    v = evaluate(stats, [], ScoutConfig())
+    assert not any("套利单腿" in r for r in v.reasons)
+
+
+def test_high_close_ratio_metric():
+    wallet = "0x" + "9" * 40
+    import time as _t
+    now=int(_t.time())
+    # 2 笔高价平仓 + 2 笔低价平仓 → ratio 0.5
+    trades=[]
+    for i,(sp) in enumerate([0.95,0.92,0.6,0.55]):
+        trades.append(Trade(proxy_wallet=wallet,side="BUY",asset=f"t{i}",condition_id="0xc",
+                            size=100,price=0.5,timestamp=now-i*100-50,title="M",outcome="Y",
+                            transaction_hash=f"b{i}"))
+        trades.append(Trade(proxy_wallet=wallet,side="SELL",asset=f"t{i}",condition_id="0xc",
+                            size=100,price=sp,timestamp=now-i*100,title="M",outcome="Y",
+                            transaction_hash=f"s{i}"))
+    stats=replay(wallet,trades)
+    assert stats.high_close_sells == 2 and stats.high_close_ratio == 0.5

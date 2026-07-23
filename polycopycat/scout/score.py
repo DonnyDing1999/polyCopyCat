@@ -35,6 +35,12 @@ class ScoutConfig:
     max_win_rate_sample: int = 50         # 套利判定所需的最少配对卖出数
     max_unrealized_drawdown_ratio: float = 0.5  # 持仓浮亏/成本 超过此比例 = 疑似死仓
     min_exposure_for_drawdown_usdc: float = 500.0  # 死仓判定所需的最小持仓成本
+    # 跨场馆/跨账户套利单腿指纹：几乎不割肉（胜率异常高）+ 全在贴近1.0平仓。
+    # 这类账户的输腿在别处（另一账户或场外博彩），本钱包只见幸存的赢腿，
+    # 招聘版按盈亏/死仓完全看不穿，会给满分——专门一条规则筛掉。
+    arb_min_win_rate: float = 0.9          # 胜率高于此才触发套利嫌疑判定
+    arb_min_high_close_ratio: float = 0.85  # 卖出里贴近1.0平仓占比高于此
+    arb_min_sample: int = 20               # 套利指纹判定所需的最少配对卖出数
     quick_window_s: float = DEFAULT_QUICK_WINDOW_S
     request_delay_s: float = 0.15         # 逐地址评估时的限速间隔
 
@@ -189,6 +195,17 @@ def evaluate(
         reasons.append(
             f"胜率 {win_rate:.0%}×{stats.matched_sells} 笔，高得不像方向性交易"
             "（疑似结构性套利）"
+        )
+    if (
+        win_rate is not None
+        and stats.matched_sells >= config.arb_min_sample
+        and win_rate >= config.arb_min_win_rate
+        and stats.high_close_ratio >= config.arb_min_high_close_ratio
+    ):
+        reasons.append(
+            f"疑似跨场馆套利单腿（胜率 {win_rate:.0%}、"
+            f"{stats.high_close_ratio:.0%} 的卖出贴近1.0平仓、几乎不割肉；"
+            "输腿在别处，本钱包只见赢腿）"
         )
     if exposure >= config.min_exposure_for_drawdown_usdc:
         drawdown = unrealized / exposure
