@@ -141,6 +141,12 @@ class TargetReport:
     other: int = 0            # received/error 等其余状态
     bought_notional: float = 0.0   # 跟随该目标累计买入金额（下过的注）
     realized_pnl: float = 0.0      # 可归因的已实现盈亏（卖出跟随平掉的部分）
+    settle_pnl: float = 0.0        # 结算/强平盈亏按建仓成本占比分摊到本目标的部分
+
+    @property
+    def total_pnl(self) -> float:
+        """本目标合计盈亏：卖出跟随平仓 + 结算/强平归因。"""
+        return self.realized_pnl + self.settle_pnl
 
     @property
     def total_signals(self) -> int:
@@ -383,6 +389,19 @@ class Ledger:
         ).fetchone()
         return row["size"] if row else 0.0
 
+    def buy_builders(self, token_id: str) -> set[str]:
+        """该 token 的建仓者：下过 BUY 且成交（status='executed'）的目标地址集合。
+
+        对账强制离场兜底用——这些目标全都清仓了，才认定该跟的时机已过、强平自仓。
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT DISTINCT target FROM signals "
+                "WHERE token_id = ? AND side = 'BUY' AND status = 'executed'",
+                (token_id,),
+            ).fetchall()
+        return {r["target"] for r in rows}
+
     def market_cost(self, condition_id: str) -> float:
         row = self._conn.execute(
             "SELECT COALESCE(SUM(size * avg_cost), 0) AS c FROM positions WHERE condition_id = ?",
@@ -557,11 +576,13 @@ class Ledger:
         return {r["status"]: r["n"] for r in rows}
 
     def report_by_target(self) -> tuple[list[TargetReport], float, int]:
-        """按目标拆分：每个目标的信号归属 + 可归因已实现盈亏。
+        """按目标拆分：每个目标的信号归属 + 已实现盈亏 + 结算/强平归因。
 
-        返回 (每目标报告[按已实现盈亏降序], 未归属结算盈亏, 结算订单数)。
-        卖出跟随的盈亏经 orders→signals 干净归到目标；市场结算入账的订单
-        是 signal_id=0（持仓层，可能多目标共建），无法拆分，单列返回。
+        返回 (每目标报告[按合计盈亏降序], 无法归因的盈亏, 对应订单数)。
+        卖出跟随的盈亏经 orders→signals 干净归到目标；结算(REDEEM)与对账强平
+        (side=SELL) 都是 signal_id=0、不直接挂目标，按该 token 各目标的建仓成本
+        (BUY 成交额) 占比把 realized_pnl 分摊进各自的「结算归因」桶；查不到任何
+        建仓 BUY 的（非跟单来源的仓）留在「未按目标归属」单列返回。
         """
         _KNOWN = {"executed", "filtered", "skipped", "risk_blocked", "netted", "no_fill"}
         with self._lock:
@@ -576,10 +597,39 @@ class Ledger:
                    FROM orders o JOIN signals s ON o.signal_id = s.id
                    GROUP BY s.target"""
             ).fetchall()
-            settle = self._conn.execute(
-                "SELECT COALESCE(SUM(realized_pnl), 0) AS pnl, COUNT(*) AS n "
-                "FROM orders WHERE signal_id = 0"
-            ).fetchone()
+            # 各 token 的建仓成本按目标拆分：BUY 成交额（filled_size×avg_price），供结算/强平分摊
+            build_rows = self._conn.execute(
+                """SELECT o.token_id AS token_id, s.target AS target,
+                          COALESCE(SUM(o.filled_size * o.avg_price), 0) AS cost
+                   FROM orders o JOIN signals s ON o.signal_id = s.id
+                   WHERE o.side = 'BUY' AND o.filled_size > 0
+                   GROUP BY o.token_id, s.target"""
+            ).fetchall()
+            # 待归因的结算/强平单：signal_id=0 且有实际盈亏（REDEEM 结算 + 对账离场）
+            settle_rows = self._conn.execute(
+                "SELECT token_id, realized_pnl FROM orders "
+                "WHERE signal_id = 0 AND realized_pnl != 0"
+            ).fetchall()
+
+        # token -> {target: 建仓成本}
+        build_cost: dict[str, dict[str, float]] = {}
+        for r in build_rows:
+            build_cost.setdefault(r["token_id"], {})[r["target"]] = r["cost"]
+        # 逐笔把结算/强平盈亏按建仓成本占比摊给各建仓目标；无建仓来源的留未归属
+        settle_by_target: dict[str, float] = {}
+        unattr_pnl = 0.0
+        unattr_n = 0
+        for r in settle_rows:
+            costs = build_cost.get(r["token_id"])
+            total = sum(costs.values()) if costs else 0.0
+            if not costs or total <= 0:
+                unattr_pnl += r["realized_pnl"]
+                unattr_n += 1
+                continue
+            for target, cost in costs.items():
+                settle_by_target[target] = (
+                    settle_by_target.get(target, 0.0) + r["realized_pnl"] * cost / total
+                )
 
         agg: dict[str, dict] = {}
         for r in sig_rows:
@@ -589,6 +639,8 @@ class Ledger:
             bucket = agg.setdefault(r["target"], {"counts": {}, "bought": 0.0, "realized": 0.0})
             bucket["bought"] = r["bought"]
             bucket["realized"] = r["realized"]
+        for target in settle_by_target:  # 只在结算归因里出现的目标也建桶（防御，一般已在信号里）
+            agg.setdefault(target, {"counts": {}, "bought": 0.0, "realized": 0.0})
 
         reports: list[TargetReport] = []
         for target, bucket in agg.items():
@@ -605,6 +657,7 @@ class Ledger:
                 other=other,
                 bought_notional=bucket["bought"],
                 realized_pnl=bucket["realized"],
+                settle_pnl=settle_by_target.get(target, 0.0),
             ))
-        reports.sort(key=lambda t: (t.realized_pnl, t.bought_notional), reverse=True)
-        return reports, settle["pnl"], settle["n"]
+        reports.sort(key=lambda t: (t.total_pnl, t.bought_notional), reverse=True)
+        return reports, unattr_pnl, unattr_n

@@ -161,7 +161,8 @@ def test_report_by_target_attributes_pnl_and_counts(ledger):
     assert rb.executed == 1 and rb.netted == 1
 
 
-def test_report_by_target_buckets_settlement_separately(ledger):
+def test_report_by_target_attributes_settlement_by_build_cost(ledger):
+    # 单一建仓者：结算盈亏全额归到该目标的「结算归因」桶，不再堆未归属
     a = "0x" + "a" * 40
     sid = _signal(ledger, "0xa1", a, side="BUY", size=100, price=0.50)
     ledger.record_order(sid, intent(side="BUY", size=100, limit=0.50),
@@ -170,18 +171,72 @@ def test_report_by_target_buckets_settlement_separately(ledger):
     realized = ledger.settle_position("tok1", 1.0, mode="paper")
     assert abs(realized - 50.0) < 1e-9  # 100 × (1.0 - 0.50)
 
-    reports, settle_pnl, settle_n = ledger.report_by_target()
-    assert settle_n == 1
-    assert abs(settle_pnl - 50.0) < 1e-9
-    # 结算盈亏不算进目标 A 的可归因盈亏（signal_id=0 不 join）
-    assert reports[0].target == a and reports[0].realized_pnl == 0.0
-    # 但总账仍然对得上：可归因 + 未归属 = 全部
-    assert abs(ledger.realized_pnl_total() - 50.0) < 1e-9
+    reports, unattr_pnl, unattr_n = ledger.report_by_target()
+    assert unattr_n == 0 and abs(unattr_pnl) < 1e-9
+    ra = {r.target: r for r in reports}[a]
+    assert ra.realized_pnl == 0.0                  # 没有卖出跟随腿
+    assert abs(ra.settle_pnl - 50.0) < 1e-9        # 结算按唯一建仓者全额归 A
+    assert abs(ra.total_pnl - 50.0) < 1e-9         # 合计 = 已实现 + 结算归因
+    # 不变式仍成立：可归因 + 结算归因 + 未归属 = 账本总已实现
+    assert abs(ra.realized_pnl + ra.settle_pnl + unattr_pnl
+               - ledger.realized_pnl_total()) < 1e-9
+
+
+def test_report_by_target_settlement_attribution_invariant(ledger):
+    """结算/强平归因不变式：Σ(各目标 已实现 + 结算归因) + 未归属 = 账本总已实现。
+
+    覆盖：多目标共建同一 token（按成本占比分摊）、无建仓者（留未归属）、
+    对账强制离场单（signal_id=0、side=SELL）。
+    """
+    a = "0x" + "a" * 40
+    b = "0x" + "b" * 40
+    c = "0x" + "c" * 40
+
+    # 用例1：A、B 共建 tok1（成本 40 : 60），市场结算价 1.0 → 已实现 100，按 40:60 分摊
+    sid_a = _signal(ledger, "0xa1", a, side="BUY", token="tok1", size=100, price=0.40)
+    ledger.record_order(sid_a, intent(side="BUY", token="tok1", size=100, limit=0.40),
+                        mode="paper", status="filled", filled_size=100, avg_price=0.40)
+    sid_b = _signal(ledger, "0xb1", b, side="BUY", token="tok1", size=100, price=0.60)
+    ledger.record_order(sid_b, intent(side="BUY", token="tok1", size=100, limit=0.60),
+                        mode="paper", status="filled", filled_size=100, avg_price=0.60)
+    r1 = ledger.settle_position("tok1", 1.0, mode="paper")  # 200 × (1.0 - 0.50) = 100
+    assert abs(r1 - 100.0) < 1e-9
+
+    # 用例2：无跟单来源的仓（signal_id=0 的孤立 BUY 建的仓），归零结算亏损 → 未归属
+    ledger.record_order(0, intent(side="BUY", token="tokX", cond="0xcx", size=50, limit=0.80),
+                        mode="paper", status="filled", filled_size=50, avg_price=0.80)
+    r2 = ledger.settle_position("tokX", 0.0, mode="paper")  # 50 × (0.0 - 0.80) = -40
+    assert abs(r2 - (-40.0)) < 1e-9
+
+    # 用例3：C 建 tokF，对账强制离场（signal_id=0、side=SELL）全仓平掉，亏损归 C
+    sid_c = _signal(ledger, "0xc1", c, side="BUY", token="tokF", cond="0xcf", size=100, price=0.30)
+    ledger.record_order(sid_c, intent(side="BUY", token="tokF", cond="0xcf", size=100, limit=0.30),
+                        mode="paper", status="filled", filled_size=100, avg_price=0.30)
+    rf = ledger.record_order(0, intent(side="SELL", token="tokF", cond="0xcf", size=100, limit=0.20),
+                             mode="paper", status="filled", filled_size=100, avg_price=0.20,
+                             detail="对账离场：建仓目标已清仓")
+    assert abs(rf - (-10.0)) < 1e-9  # 100 × (0.20 - 0.30)
+
+    reports, unattr_pnl, unattr_n = ledger.report_by_target()
+    by = {r.target: r for r in reports}
+    # 用例1：按成本占比 40:60 分给 A、B
+    assert abs(by[a].settle_pnl - 40.0) < 1e-9
+    assert abs(by[b].settle_pnl - 60.0) < 1e-9
+    # 用例3：强平亏损全额归唯一建仓者 C
+    assert by[c].realized_pnl == 0.0
+    assert abs(by[c].settle_pnl - (-10.0)) < 1e-9
+    # 用例2：无建仓来源 → 未归属
+    assert unattr_n == 1 and abs(unattr_pnl - (-40.0)) < 1e-9
+
+    # 不变式：Σ(已实现 + 结算归因) + 未归属 = 账本总已实现
+    lhs = sum(r.realized_pnl + r.settle_pnl for r in reports) + unattr_pnl
+    assert abs(lhs - ledger.realized_pnl_total()) < 1e-9
+    assert abs(ledger.realized_pnl_total() - 50.0) < 1e-9  # 100 - 40 - 10
 
 
 def test_report_by_target_empty(ledger):
-    reports, settle_pnl, settle_n = ledger.report_by_target()
-    assert reports == [] and settle_pnl == 0 and settle_n == 0
+    reports, unattr_pnl, unattr_n = ledger.report_by_target()
+    assert reports == [] and unattr_pnl == 0 and unattr_n == 0
 
 
 # ---- 执行质量（report 的「执行质量」小节数据层）----

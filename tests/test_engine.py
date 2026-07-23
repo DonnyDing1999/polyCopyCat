@@ -289,3 +289,130 @@ def test_reconcile_live_syncs_ledger_and_notifies_redeemable_once():
     redeems = [m for m in notifier.messages if "可赎回" in m]
     assert len(redeems) == 1 and "88.00" in redeems[0]
     ledger.close()
+
+
+# ---- 特性1：BUY 期限闸（filters.min_days_to_resolution）----
+
+def _market_with_end(days_from_now):
+    """距结束 days_from_now 天的市场；days_from_now=None → end_ts=0（元数据缺失）。"""
+    end_ts = 0.0 if days_from_now is None else time.time() + days_from_now * 86400
+    return MarketInfo(
+        condition_id="0xcond", tick_size=0.01, min_size=5.0,
+        neg_risk=False, accepting_orders=True, closed=False, end_ts=end_ts,
+    )
+
+
+def test_buy_blocked_when_resolution_too_close(rig):
+    engine, ledger, notifier, clob = rig
+    engine.config.filters.min_days_to_resolution = 3.0
+    clob.market = _market_with_end(1.0)  # 距结算 1 天 < 下限 3 天
+    submit_sync(engine, make_trade(tx="0xh1"))
+    assert ledger.signal_counts() == {"filtered": 1}
+    assert ledger.positions() == [] and notifier.messages == []
+    detail = ledger._conn.execute("SELECT detail FROM signals LIMIT 1").fetchone()["detail"]
+    assert "距结算" in detail and "短周期" in detail
+
+
+def test_buy_allowed_when_resolution_far_enough(rig):
+    engine, ledger, _, clob = rig
+    engine.config.filters.min_days_to_resolution = 3.0
+    clob.market = _market_with_end(10.0)  # 距结算 10 天 ≥ 下限
+    submit_sync(engine, make_trade(tx="0xh2"))
+    assert ledger.signal_counts() == {"executed": 1}
+
+
+def test_buy_blocked_when_end_ts_missing(rig):
+    engine, ledger, _, clob = rig
+    engine.config.filters.min_days_to_resolution = 3.0
+    clob.market = _market_with_end(None)  # end_ts=0 → 保守不开新仓
+    submit_sync(engine, make_trade(tx="0xh3"))
+    assert ledger.signal_counts() == {"filtered": 1}
+    detail = ledger._conn.execute("SELECT detail FROM signals LIMIT 1").fetchone()["detail"]
+    assert "缺少结束时间元数据" in detail
+
+
+def test_horizon_gate_off_by_default(rig):
+    engine, ledger, _, clob = rig
+    assert engine.config.filters.min_days_to_resolution is None  # 默认关闭
+    clob.market = _market_with_end(0.1)  # 距结算约 2.4 小时，但闸关着
+    submit_sync(engine, make_trade(tx="0xh4"))
+    assert ledger.signal_counts() == {"executed": 1}
+
+
+def test_sell_not_blocked_by_horizon_gate(rig):
+    engine, ledger, notifier, clob = rig
+    engine.config.filters.min_days_to_resolution = 3.0
+    clob.market = _market_with_end(10.0)  # 长线市场先建仓（BUY 过闸）
+    seed_buy(engine, ledger)
+    engine._mirror.replace(ADDR, {"tok1": 1000})
+    clob.market = _market_with_end(0.5)  # 翻成短周期：BUY 会被拦，SELL 不该受影响
+    submit_sync(engine, make_trade(tx="0xh5", side="SELL", size=500))
+    assert ledger.positions()[0].size < 48.07  # 已跟随减仓
+    assert any("跟随卖出" in m for m in notifier.messages)
+
+
+# ---- 特性2：持仓时 SELL 绕过时效闸与标题过滤 ----
+
+def _make_signal(*, side="SELL", title="Will X happen?", age_s=0.0):
+    from polycopycat.engine.config import TargetConfig
+    trade = Trade(
+        proxy_wallet=ADDR, side=side, asset="tok1", condition_id="0xcond",
+        size=100, price=0.5, timestamp=int(time.time() - age_s),
+        title=title, outcome="Yes", transaction_hash="0xt",
+    )
+    return Signal(trade=trade, target=TargetConfig(address=ADDR), received_at=time.time())
+
+
+def test_filter_holding_sell_bypasses_age_and_title():
+    from polycopycat.engine.config import FilterConfig
+    from polycopycat.engine.signals import SignalFilter
+    flt = SignalFilter(FilterConfig(
+        max_signal_age_s=30, long_horizon_age_s=None, skip_title_patterns=["up or down"]
+    ))
+    stale = _make_signal(side="SELL", age_s=3600)
+    assert not flt.check(stale, holding=False)[0]   # 未持仓：超龄被拦
+    assert flt.check(stale, holding=True)[0]         # 持仓：放行
+    titled = _make_signal(side="SELL", title="SPX Up or Down?")
+    assert not flt.check(titled, holding=False)[0]   # 未持仓：命中标题被拦
+    assert flt.check(titled, holding=True)[0]         # 持仓：放行
+
+
+def test_filter_holding_does_not_bypass_buy():
+    from polycopycat.engine.config import FilterConfig
+    from polycopycat.engine.signals import SignalFilter
+    flt = SignalFilter(FilterConfig(
+        max_signal_age_s=30, long_horizon_age_s=None, skip_title_patterns=["up or down"]
+    ))
+    # holding 只放行 SELL；BUY 仍照常过时效闸与标题过滤
+    assert not flt.check(_make_signal(side="BUY", age_s=3600), holding=True)[0]
+    assert not flt.check(_make_signal(side="BUY", title="SPX Up or Down?"), holding=True)[0]
+
+
+def test_holding_sell_bypasses_age_gate_end_to_end(rig):
+    engine, ledger, notifier, _ = rig
+    seed_buy(engine, ledger)  # 自己持有 tok1
+    engine._mirror.replace(ADDR, {"tok1": 1000})
+    # 目标卖出信号超龄 1 小时：未持仓会被时效闸拦，持仓则放行
+    submit_sync(engine, make_trade(tx="0xb1", side="SELL", size=500, ts=time.time() - 3600))
+    assert ledger.positions()[0].size < 48.07
+    assert any("跟随卖出" in m for m in notifier.messages)
+
+
+def test_holding_sell_bypasses_title_filter_end_to_end():
+    config = make_config(filters={
+        "min_target_notional_usdc": 20, "max_signal_age_s": 60,
+        "skip_title_patterns": ["up or down"],
+    })
+    clob = FakeClob()
+    ledger = Ledger(":memory:")
+    notifier = ListNotifier()
+    engine = CopyEngine(config, clob=clob, ledger=ledger,
+                        executor=PaperExecutor(clob), notifier=notifier)
+    submit_sync(engine, make_trade(tx="0xseed"))  # 建仓（标题不命中过滤规则）
+    assert ledger.positions()[0].size == 48.07
+    engine._mirror.replace(ADDR, {"tok1": 1000})
+    sell = make_trade(tx="0xb2", side="SELL", size=500)
+    object.__setattr__(sell, "title", "SPX Up or Down today?")  # 命中过滤规则
+    submit_sync(engine, sell)
+    assert ledger.positions()[0].size < 48.07  # 持仓 → 绕过标题过滤，照常跟卖
+    ledger.close()

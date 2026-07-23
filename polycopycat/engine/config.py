@@ -103,6 +103,10 @@ class FilterConfig:
     # 成交只能靠轮询捡），闸门低于这个数就等于把长线信号成批扔掉。
     long_horizon_age_s: float | None = 300.0
     long_horizon_days: float = 7.0            # 距市场结束 ≥ 此天数才算长线
+    # 仅对 BUY：市场距结算不足此天数就不开新仓；null=关闭。数据实证——结算亏损
+    # 全来自比赛日/日内这类短周期盘，目标的 edge 是现场时机，跟单延迟下必然接刀
+    # 且没有中途纠错机会。SELL（离场）不受此闸约束。
+    min_days_to_resolution: float | None = None
     follow_sells: bool = True               # 是否跟随卖出（需要持仓镜像）
     skip_title_patterns: list[str] = field(default_factory=list)  # 市场标题命中即不跟（短期盘）
 
@@ -118,6 +122,9 @@ class FilterConfig:
         )
         self.long_horizon_days = _positive(
             "filters.long_horizon_days", self.long_horizon_days, allow_none=False
+        )
+        self.min_days_to_resolution = _positive(
+            "filters.min_days_to_resolution", self.min_days_to_resolution
         )
         if (
             self.long_horizon_age_s is not None
@@ -326,6 +333,9 @@ class EngineConfig:
     ledger_path: str = "data/copycat.sqlite3"
     reconcile_interval_s: float = 300.0
     auto_settle_resolved: bool = True  # 纸面：市场结算后自动按结算价入账
+    # 对账兜底：当初建这笔仓的目标全部清仓，而我们的卖出信号漏了（超龄被拦/宕机/
+    # 双通道都漏），强制平掉自己的仓，避免拿到归零结算。属对账行为，与信号过滤无关。
+    force_exit_on_target_flat: bool = True
     data_api_url: str | None = None  # 留空用官方入口/环境变量
     ws_url: str | None = None
     clob_url: str | None = None
@@ -344,6 +354,7 @@ class EngineConfig:
             "reconcile_interval_s", self.reconcile_interval_s, allow_none=False
         )
         self.auto_settle_resolved = bool(self.auto_settle_resolved)
+        self.force_exit_on_target_flat = bool(self.force_exit_on_target_flat)
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "EngineConfig":

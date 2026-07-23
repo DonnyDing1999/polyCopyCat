@@ -22,6 +22,7 @@
     "max_signal_age_s": 30,
     "long_horizon_age_s": 300,
     "long_horizon_days": 7,
+    "min_days_to_resolution": null,
     "follow_sells": true,
     "skip_title_patterns": []
   },
@@ -70,5 +71,6 @@
     "i_understand_live_trading_risk": false
   },
   "reconcile_interval_s": 300,
-  "auto_settle_resolved": true
+  "auto_settle_resolved": true,
+  "force_exit_on_target_flat": true
 }

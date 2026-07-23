@@ -491,29 +491,30 @@ def _print_pool_status(ledger, config) -> None:
 
 
 def _print_by_target(ledger) -> None:
-    """按目标归因：谁的纸面跟单真赚钱、谁的动作跟得上。"""
-    reports, settle_pnl, settle_n = ledger.report_by_target()
+    """按目标归因：谁的纸面跟单真赚钱、谁的动作跟得上（含结算/强平归因）。"""
+    reports, unattr_pnl, unattr_n = ledger.report_by_target()
     print(f"\n## 按目标归因（{len(reports)} 个目标）")
     if not reports:
         print("（暂无信号）")
     else:
         print(
-            f"  {'目标':<14} {'已实现':>10}  {'累计买入':>10}  "
+            f"  {'目标':<14} {'已实现':>10}  {'结算归因':>10}  {'合计':>10}  {'累计买入':>10}  "
             f"{'执行/信号':>11}  {'跟单率':>6}  过滤/跳过/风控/轧差/无对手"
         )
         for t in reports:
             print(
-                f"  {_short(t.target):<14} ${t.realized_pnl:>+9.2f}  ${t.bought_notional:>9.2f}  "
+                f"  {_short(t.target):<14} ${t.realized_pnl:>+9.2f}  ${t.settle_pnl:>+9.2f}  "
+                f"${t.total_pnl:>+9.2f}  ${t.bought_notional:>9.2f}  "
                 f"{t.executed:>5}/{t.total_signals:<5}  {t.followable_ratio:>5.0%}  "
                 f"{t.filtered}/{t.skipped}/{t.risk_blocked}/{t.netted}/{t.no_fill}"
             )
-    if settle_n:
+    if unattr_n:
         print(
-            f"\n  未按目标归属（市场结算入账）: ${settle_pnl:+.2f}（{settle_n} 笔 REDEEM）"
+            f"\n  未按目标归属（无跟单来源的仓）: ${unattr_pnl:+.2f}（{unattr_n} 笔结算/强平）"
         )
     print(
-        "  说明：卖出跟随平仓的盈亏已按目标归属；结算盈亏在持仓层入账"
-        "（一个 token 可能多目标共建），不拆分到单个目标。"
+        "  说明：卖出跟随平仓的盈亏已按目标归属；结算/强平盈亏已按建仓成本占比归因；"
+        "无跟单来源的仓除外。"
     )
 
 

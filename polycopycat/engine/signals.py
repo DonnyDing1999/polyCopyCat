@@ -51,8 +51,14 @@ class SignalFilter:
     def __init__(self, config: FilterConfig) -> None:
         self._config = config
 
-    def check(self, signal: Signal) -> tuple[bool, str]:
-        """逐笔检查（金额阈值除外——那个在聚合合并后检查，见 check_notional）。"""
+    def check(self, signal: Signal, holding: bool = False) -> tuple[bool, str]:
+        """逐笔检查（金额阈值除外——那个在聚合合并后检查，见 check_notional）。
+
+        holding=True 表示我们已持有该 token。此时目标卖出，「他还在场」这个前提
+        本身已经没了——晚离场几乎总好过拿到归零。所以已持仓的 SELL 信号跳过时效闸
+        与 skip_title_patterns（这两个闸只该拦进场；仓位还可能是加过滤规则之前建的）。
+        paused、follow_sells、价格/数量合法性照旧拦。
+        """
         trade = signal.trade
         if signal.target.paused:
             return False, "目标地址已暂停跟单"
@@ -62,14 +68,16 @@ class SignalFilter:
             return False, "已配置不跟随卖出"
         if trade.price <= 0 or trade.size <= 0:
             return False, "成交价格或数量非法"
-        if self._config.skip_title_patterns:
+        exiting = holding and trade.side == "SELL"  # 已持仓的离场信号，绕过进场闸
+        if not exiting and self._config.skip_title_patterns:
             title = (trade.title or "").lower()
             for pattern in self._config.skip_title_patterns:
                 if pattern in title:
                     return False, f"命中短期盘过滤规则「{pattern}」，不跟"
-        ceiling = self.max_age_ceiling
-        if signal.age_s > ceiling:
-            return False, f"信号已过期 {signal.age_s:.0f}s（阈值 {ceiling:.0f}s）"
+        if not exiting:
+            ceiling = self.max_age_ceiling
+            if signal.age_s > ceiling:
+                return False, f"信号已过期 {signal.age_s:.0f}s（阈值 {ceiling:.0f}s）"
         return True, ""
 
     @property

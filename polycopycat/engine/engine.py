@@ -26,7 +26,7 @@ from .aggregate import MergedGroup, PendingSignal, group_key, merge_pending
 from .clob import ClobError, ClobReadClient, MarketInfo
 from .config import EngineConfig, TargetConfig
 from .executor import ExecutionResult
-from .ledger import Ledger
+from .ledger import Ledger, PositionRow
 from .mirror import TargetMirror
 from .notify import Notifier
 from .risk import RiskGate
@@ -133,6 +133,8 @@ class CopyEngine:
         self._reconcile_thread: threading.Thread | None = None
         self._reconcile_stop = threading.Event()
         self._redeem_notified: set[str] = set()
+        # 强制离场两轮确认的待确认 token（内存态，不持久化；重启后重新数两轮可接受）
+        self._pending_force_exit: set[str] = set()
         self._health_paused: set[str] = set()   # 由健康巡检暂停的目标（区别于手动 paused）
         # 巡检/发现计时用墙钟并持久化在账本 state 表：重启接着算，不从零
         self._last_health_check = time.time()
@@ -320,7 +322,13 @@ class CopyEngine:
                 continue
             # 无论这笔最终跟不跟，目标的持仓镜像都要如实更新
             prev = self._mirror.apply_trade(trade)
-            ok, reason = self._filter.check(signal)
+            # 已持仓时目标卖出，「他还在场」的前提已没了：离场信号绕过进场闸
+            # （SELL 是少数，逐笔查一次 sqlite 可接受）
+            holding = (
+                trade.side == "SELL"
+                and self._ledger.position_size(trade.asset) > 1e-9
+            )
+            ok, reason = self._filter.check(signal, holding=holding)
             if not ok:
                 self._ledger.update_signal(signal_id, "filtered", reason)
                 logger.info("过滤: %s —— %s", reason, self._trade_label(trade))
@@ -337,6 +345,12 @@ class CopyEngine:
             self._mark_group(group, "error", f"拉取市场元数据失败: {exc}")
             logger.warning("拉取市场元数据失败，放弃该信号组: %s —— %s", exc, label)
             return None
+
+        if group.trade.side == "BUY":
+            horizon = self._resolution_horizon_reason(market)
+            if horizon:  # 短周期市场对 BUY 关闸（组内同市场，一荣俱荣）
+                self._mark_group(group, "filtered", horizon)
+                return None
 
         narrowed = self._enforce_market_age(group, market)
         if narrowed is None:
@@ -376,12 +390,35 @@ class CopyEngine:
             return None
         return _Planned(group=group, intent=intent, market=market)
 
+    def _resolution_horizon_reason(self, market: MarketInfo) -> str:
+        """BUY 期限闸：距结算不足下限天数则返回拦截理由，否则空串（放行）。
+
+        只作用于开新仓（调用方已判定 side==BUY）。end_ts 缺失按短周期保守处理，
+        文案与正常不过闸区分开。
+        """
+        min_days = self.config.filters.min_days_to_resolution
+        if not min_days:  # None / 0 → 闸关闭
+            return ""
+        end_ts = getattr(market, "end_ts", 0.0) or 0.0
+        if not end_ts:
+            return "市场缺少结束时间元数据，按短周期保守不开新仓"
+        days_left = (end_ts - time.time()) / 86400
+        if days_left < min_days:
+            return f"距结算 {days_left:.1f} 天 < 下限 {min_days:.1f} 天，短周期市场不开新仓"
+        return ""
+
     def _enforce_market_age(self, group: MergedGroup, market: MarketInfo) -> MergedGroup | None:
         """按该市场的精确时效上限复核信号组（逐笔粗筛只按放宽上限放行）。
 
         长线市场放宽、短线维持严格（见 SignalFilter.age_limit_for）。
         超龄成员标 filtered，剩余成员重新并组；全部超龄返回 None。
         """
+        # 已持仓的离场组：目标离场即信号，整组跳过精筛（晚离场胜过拿到归零）
+        if (
+            group.trade.side == "SELL"
+            and self._ledger.position_size(group.trade.asset) > 1e-9
+        ):
+            return group
         limit = self._filter.age_limit_for(market)
         now = time.time()
         fresh: list[PendingSignal] = []
@@ -547,12 +584,14 @@ class CopyEngine:
 
     def reconcile_once(self) -> None:
         """刷新目标持仓镜像；纸面自动结算已出结果的持仓；实盘同步持仓并提醒可赎回。"""
+        failed_refresh: set[str] = set()  # 本轮镜像拉取失败的地址（强制离场据此避让陈旧镜像）
         if self._data is not None:
             for address in self._targets:
                 try:
                     positions = self._data.get_positions(address)
                 except DataApiError as exc:
                     logger.warning("拉取 %s 持仓失败，镜像维持现状: %s", _short(address), exc)
+                    failed_refresh.add(address)
                     continue
                 self._mirror.replace(address, {p.asset: p.size for p in positions})
                 logger.debug("镜像已刷新: %s 持有 %d 个仓位", _short(address), len(positions))
@@ -567,6 +606,9 @@ class CopyEngine:
 
         if self.config.mode != "live" and self.config.auto_settle_resolved:
             self._settle_resolved_positions()
+
+        # 兜底：建这笔仓的目标全清仓了，我们的卖出信号却漏了 → 强平自仓（两轮确认）
+        self._maybe_force_exit(failed_refresh)
 
         if self.config.mode != "live" or not self._own_address or self._data is None:
             return
@@ -587,6 +629,101 @@ class CopyEngine:
                 f"🎉 市场已结算可赎回：{p.size:.2f} 份 [{p.outcome}] {p.title} —— "
                 "请在 Polymarket 页面 redeem 换回 USDC"
             )
+
+    def _maybe_force_exit(self, failed_refresh: set[str]) -> None:
+        """对账兜底：建仓目标全部清仓时强平自仓，防卖出信号漏了拿到归零结算。
+
+        判定：自己每一笔持仓，取「建仓者」（下过 BUY 且成交的目标）与当前 targets
+        的交集；交集为空不碰（不是我们跟出来的，或建仓者已被用户删除，不越权）。
+        所有建仓者的镜像持仓都 ≤ 1 份（份额级 dust，目标常留渣）才算全清仓。任一
+        建仓者本轮镜像拉取失败 → 跳过该 token（绝不拿陈旧镜像误杀）。paused 的目标
+        照样参与判定——兜底保护的是我们的钱，与暂停语义无关。
+
+        两轮确认：首轮命中只登记进 _pending_force_exit，下一轮仍命中才真正执行；
+        条件消失即移出。防 data-api 瞬时返回空持仓造成误杀。
+        """
+        if not self.config.force_exit_on_target_flat or self._data is None:
+            return
+        targets = set(self._targets)
+        candidates: list[tuple[PositionRow, set[str]]] = []
+        for position in self._ledger.positions():  # size > 0
+            token = position.token_id
+            builders = self._ledger.buy_builders(token) & targets
+            if not builders:
+                continue  # 不是我们跟出来的仓，或建仓者已被移出配置：不越权
+            if builders & failed_refresh:
+                continue  # 某建仓者镜像本轮没刷新，宁可下轮再判也不误杀
+            if all(self._mirror.size_of(b, token) <= 1.0 for b in builders):
+                candidates.append((position, builders))
+        live_tokens = {p.token_id for p, _ in candidates}
+        self._pending_force_exit &= live_tokens  # 条件消失的移出待确认集合
+        for position, builders in candidates:
+            token = position.token_id
+            if token not in self._pending_force_exit:
+                self._pending_force_exit.add(token)  # 首轮命中：只登记，下轮确认
+                logger.info(
+                    "强制离场候选（首轮登记，下轮确认）: [%s] %s",
+                    position.outcome, position.title or _short(token),
+                )
+                continue
+            if self._force_exit_position(position, builders):
+                self._pending_force_exit.discard(token)
+
+    def _force_exit_position(self, position: PositionRow, builders: set[str]) -> bool:
+        """全仓 FAK 平掉一笔持仓；返回 True=已了结（成交/已结算跳过），False=盘口缺失下轮再试。
+
+        复用现有执行/记账路径：订单挂 signal_id=0（与 REDEEM 同惯例），限价按最优买价
+        减滑点上限取到 tick。同时记 force_exit 事件并通知。
+        """
+        token = position.token_id
+        try:
+            market = self._clob.get_market(position.condition_id, fresh=True)
+        except ClobError as exc:
+            logger.warning("强制离场拉取市场失败，下轮再试 [%s]: %s", _short(token), exc)
+            return False
+        if market.resolved:
+            return True  # 已结算：交给结算/赎回路径，安静跳过
+        try:
+            book = self._clob.get_book(token)
+        except ClobError as exc:
+            logger.warning("强制离场拉取订单簿失败，下轮再试 [%s]: %s", _short(token), exc)
+            return False
+        if not book.bids:
+            logger.info("强制离场：[%s] 盘口无买单，下轮再试", position.title or _short(token))
+            return False
+        best_bid = book.bids[0].price
+        intent = OrderIntent(
+            token_id=token,
+            condition_id=position.condition_id,
+            side="SELL",
+            limit_price=sell_limit_price(best_bid, market, self.config.execution),
+            size=round(position.size, 2),
+            ref_price=best_bid,
+            neg_risk=market.neg_risk,
+            tick_size=market.tick_size,
+            title=position.title,
+            outcome=position.outcome,
+            note="对账离场：建仓目标已清仓",
+        )
+        result: ExecutionResult = self._executor.execute(intent)
+        self._ledger.record_order(
+            0, intent, mode=self._executor.mode, status=result.status,
+            filled_size=result.filled_size, avg_price=result.avg_price,
+            slippage=result.slippage,
+            # 订单行自带「对账离场」标注：复盘最近订单时能一眼与常规跟卖区分
+            detail=f"{intent.note}；{result.detail}" if result.detail else intent.note,
+            apply_fill=getattr(self._executor, "applies_fills", True),
+        )
+        detail = (
+            f"建仓目标 {'、'.join(_short(b) for b in sorted(builders))} 已全部清仓，"
+            f"全仓强制离场 {intent.size:.2f} 份 @≤{intent.limit_price:.3f}"
+        )
+        self._ledger.record_event("force_exit", ",".join(sorted(builders)), detail)
+        prefix = "📝 纸面" if self._executor.mode == "paper" else "💰 实盘"
+        self._notifier.send(
+            f"🚪 {prefix}对账离场：{detail} —— [{position.outcome}] {position.title}"
+        )
+        return True
 
     def _maybe_check_health(self) -> None:
         interval = self.config.health.check_interval_s
