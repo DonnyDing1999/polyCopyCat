@@ -17,7 +17,10 @@ from .score import ScoutConfig, Verdict, evaluate
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LB_URL = "https://lb-api.polymarket.com"
+# 2026-07-25 实测：老入口 lb-api.polymarket.com/leaderboard 已 404（官网排行榜页
+# 改为服务端渲染），公开数据搬到了 data-api 的 /v1/leaderboard，参数名不变
+# （window 7d/30d、rankType pnl/vol），limit 硬上限 50（超出返回 400）。
+DEFAULT_LB_URL = "https://data-api.polymarket.com/v1"
 ENV_LB_URL = "POLYCOPYCAT_LB_URL"
 
 

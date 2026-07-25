@@ -363,25 +363,27 @@ def test_cold_start_merges_three_sources(tmp_path, monkeypatch):
 # 8) 排行榜降级：500 → 100 → 50 → 跳过
 # ---------------------------------------------------------------------------
 
-def test_leaderboard_degrades_500_100_50(tmp_path, monkeypatch):
+def test_leaderboard_degrades_50_25(tmp_path, monkeypatch):
+    # 接口 limit 硬上限 50（2026-07 实测），首档直接 50；阶梯只留防御——
+    # 上限再降时自动退到 25 而不是整源熄火
     calls = []
     from polycopycat.scout.runner import ScoutError
 
     def fake(*a, window, rank_type, limit, **k):
         calls.append(limit)
-        if limit > 50:
-            raise ScoutError(f"HTTP 500 at limit={limit}")
+        if limit > 25:
+            raise ScoutError(f"HTTP 400 at limit={limit}")
         return [W1]
 
     monkeypatch.setattr("polycopycat.scout.runner.candidates_from_leaderboard", fake)
     engine, _, led = make_engine(FakeData(), tmp_path=tmp_path)
     assert engine._leaderboard_fetch("7d", "pnl") == [W1]
-    assert calls == [500, 100, 50]  # 逐档降级直到成功
+    assert calls == [50, 25]  # 逐档降级直到成功
     led.close()
 
 
 def test_leaderboard_all_fail_skips_source(tmp_path):
-    # autouse fixture 已让排行榜恒抛 ScoutError → 三档全失败 → 跳过（返回空）
+    # autouse fixture 已让排行榜恒抛 ScoutError → 各档全失败 → 跳过（返回空）
     engine, _, led = make_engine(FakeData(), tmp_path=tmp_path)
     assert engine._leaderboard_fetch("30d", "vol") == []
     assert engine._leaderboard_join() == 0

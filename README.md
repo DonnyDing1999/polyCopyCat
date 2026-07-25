@@ -215,7 +215,7 @@ polycopycat report --config copycat.json --mark        # 拉实时盘口给持�
 | Data API | `data-api.polymarket.com` | 成交带、持仓（trades/watch/scout/镜像/对账） | 公开，无需鉴权 |
 | 实时数据流 | `wss://ws-live-data.polymarket.com` | 实时成交推送（官网活动流同款） | 公开；协议按公开资料实现 |
 | CLOB | `clob.polymarket.com` | 市场元数据、订单簿（只读）；实盘下单（L1/L2 鉴权） | 官方 |
-| 排行榜 | `lb-api.polymarket.com` | scout 候选来源 | **非正式文档**，不可用时自动跳过 |
+| 排行榜 | `data-api.polymarket.com/v1/leaderboard` | scout / 候选发现的票池来源之一 | **非正式文档**，limit 上限 50，不可用时自动跳过。原 `lb-api.polymarket.com` 入口 2026-07 已 404 |
 | Polymarket US gateway | `gateway.polymarket.us` | `us` 子命令（美国站行情、市场匹配） | 公开，无需鉴权；有反爬拦截，见下节 |
 
 ## 时延：轮询 vs 实时推送

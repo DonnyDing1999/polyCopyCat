@@ -874,10 +874,14 @@ class CopyEngine:
         return self._ledger.discover_universe_upsert(rows)
 
     def _leaderboard_fetch(self, window: str, rank_type: str) -> list[str]:
-        """拉一种排行榜组合，limit 500→100→50 逐档降级；三档全失败返回空（跳过该组合）。"""
+        """拉一种排行榜组合，limit 逐档降级；全失败返回空（跳过该组合）。
+
+        接口 limit 硬上限 50（2026-07 实测超出返回 400），首档直接 50；
+        保留降级阶梯纯为防御——接口再改上限时自动适应而不是整源熄火。
+        """
         from ..scout.runner import ScoutError, candidates_from_leaderboard
 
-        for limit in (500, 100, 50):
+        for limit in (50, 25):
             try:
                 return candidates_from_leaderboard(
                     window=window, rank_type=rank_type, limit=limit
@@ -887,7 +891,7 @@ class CopyEngine:
                     "排行榜 %s/%s limit=%d 拉取失败，降级重试: %s",
                     window, rank_type, limit, exc,
                 )
-        logger.warning("排行榜 %s/%s 三档 limit 全失败，跳过该组合", window, rank_type)
+        logger.warning("排行榜 %s/%s 各档 limit 全失败，跳过该组合", window, rank_type)
         return []
 
     def _leaderboard_join(self) -> int:
