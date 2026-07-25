@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import sqlite3
@@ -19,6 +20,15 @@ from pathlib import Path
 from .signals import OrderIntent, Signal
 
 logger = logging.getLogger(__name__)
+
+
+def _merge_sources(old: str, new: str) -> str:
+    """并入信号源标记（多源命中并列，如 stream+leaderboard），保持插入顺序、不重复。"""
+    parts = [p for p in (old or "").split("+") if p]
+    for token in (new or "").split("+"):
+        if token and token not in parts:
+            parts.append(token)
+    return "+".join(parts)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS signals (
@@ -82,8 +92,22 @@ CREATE TABLE IF NOT EXISTS positions (
     realized_pnl REAL NOT NULL DEFAULT 0,
     updated_ts REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS discover_universe (
+    wallet TEXT PRIMARY KEY,
+    notional REAL NOT NULL DEFAULT 0,
+    trades INTEGER NOT NULL DEFAULT 0,
+    first_seen REAL NOT NULL,
+    last_seen REAL NOT NULL,
+    last_evaluated REAL NOT NULL DEFAULT 0,
+    last_score REAL NOT NULL DEFAULT 0,
+    last_eligible INTEGER NOT NULL DEFAULT 0,
+    last_verdict TEXT DEFAULT '',
+    source TEXT NOT NULL DEFAULT ''
+);
 CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_ts);
 CREATE INDEX IF NOT EXISTS idx_positions_condition ON positions(condition_id);
+CREATE INDEX IF NOT EXISTS idx_discover_notional ON discover_universe(notional);
+CREATE INDEX IF NOT EXISTS idx_discover_last_seen ON discover_universe(last_seen);
 """
 
 
@@ -563,6 +587,174 @@ class Ledger:
             )
             entry.update(last_kind=r["kind"], last_detail=r["detail"], last_ts=r["ts"])
         return summary
+
+    # ---- 候选票池（涓流发现：三源累积 + 按优先级涓流评估）----
+
+    def discover_universe_upsert(self, rows, *, now: float | None = None) -> int:
+        """批量 upsert 票池：新地址插入（记 first_seen），已有地址累加 notional/trades、
+        刷新 last_seen、并入 source（多源命中并列）。返回处理的行数。
+
+        stream 增量的 notional/trades 是真实成交额，累加；排行榜/快照来源只保证在池，
+        传 notional=0 即「不动成交额、只刷新 last_seen」。
+        """
+        now = time.time() if now is None else now
+        n = 0
+        with self._lock:
+            self._conn.execute("BEGIN")
+            try:
+                for r in rows:
+                    wallet = str(r.get("wallet", "")).lower()
+                    if not wallet:
+                        continue
+                    notional = float(r.get("notional", 0.0) or 0.0)
+                    trades = int(r.get("trades", 0) or 0)
+                    source = str(r.get("source", "") or "")
+                    existing = self._conn.execute(
+                        "SELECT source FROM discover_universe WHERE wallet = ?", (wallet,)
+                    ).fetchone()
+                    if existing is None:
+                        self._conn.execute(
+                            """INSERT INTO discover_universe
+                               (wallet, notional, trades, first_seen, last_seen, source)
+                               VALUES (?,?,?,?,?,?)""",
+                            (wallet, notional, trades, now, now, source),
+                        )
+                    else:
+                        self._conn.execute(
+                            """UPDATE discover_universe SET
+                                 notional = notional + ?, trades = trades + ?,
+                                 last_seen = ?, source = ? WHERE wallet = ?""",
+                            (notional, trades, now,
+                             _merge_sources(existing["source"], source), wallet),
+                        )
+                    n += 1
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
+        return n
+
+    def discover_universe_count(self) -> int:
+        with self._lock:
+            return self._conn.execute(
+                "SELECT COUNT(*) AS c FROM discover_universe"
+            ).fetchone()["c"]
+
+    def discover_evaluated_since(self, ts: float) -> int:
+        """last_evaluated ≥ ts 的行数（近 24h 评估量等）。"""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT COUNT(*) AS c FROM discover_universe WHERE last_evaluated >= ?", (ts,)
+            ).fetchone()["c"]
+
+    def discover_universe_due(
+        self,
+        *,
+        limit: int,
+        universe_size: int,
+        reeval_after_s: float,
+        exclude=(),
+        now: float | None = None,
+    ) -> list[str]:
+        """按优先级取待评估地址：候选范围 = 按 notional 降序前 universe_size 名以内；
+        从未评估的在前（按 notional 降序），其次 last_evaluated 最老且超过冷却的；
+        剔除 exclude（在跟目标 + 黑名单）。返回至多 limit 个地址。
+        """
+        now = time.time() if now is None else now
+        limit = max(0, int(limit))
+        if limit == 0:
+            return []
+        exclude = {str(a).lower() for a in exclude}
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT wallet FROM (
+                       SELECT wallet, notional, last_evaluated
+                       FROM discover_universe ORDER BY notional DESC LIMIT ?
+                   )
+                   WHERE last_evaluated = 0 OR (? - last_evaluated) > ?
+                   ORDER BY (last_evaluated > 0) ASC,
+                            CASE WHEN last_evaluated = 0 THEN notional ELSE 0 END DESC,
+                            last_evaluated ASC""",
+                (max(1, int(universe_size)), now, reeval_after_s),
+            ).fetchall()
+        out: list[str] = []
+        for r in rows:
+            if r["wallet"] in exclude:
+                continue
+            out.append(r["wallet"])
+            if len(out) >= limit:
+                break
+        return out
+
+    def discover_universe_record_eval(
+        self, wallet: str, *, score: float, eligible: bool,
+        verdict=None, now: float | None = None,
+    ) -> None:
+        """把一次评估结论写回票池行（分数/是否合格/最近评估结果 JSON/时间戳）。"""
+        now = time.time() if now is None else now
+        blob = json.dumps(verdict, ensure_ascii=False) if verdict is not None else ""
+        with self._lock:
+            self._conn.execute(
+                """UPDATE discover_universe SET
+                     last_evaluated = ?, last_score = ?, last_eligible = ?, last_verdict = ?
+                   WHERE wallet = ?""",
+                (now, float(score), 1 if eligible else 0, blob, str(wallet).lower()),
+            )
+
+    def discover_universe_roster(self, *, exclude=()) -> list[dict]:
+        """当前合格名录：last_eligible=1 且不在 exclude 的地址，最近评估结果（含
+        evaluated_at）按分数降序。喂给 discover-latest.json 的 eligible 段。
+        """
+        exclude = {str(a).lower() for a in exclude}
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT wallet, last_evaluated, last_verdict FROM discover_universe
+                   WHERE last_eligible = 1 ORDER BY last_score DESC"""
+            ).fetchall()
+        out: list[dict] = []
+        for r in rows:
+            if r["wallet"] in exclude:
+                continue
+            try:
+                entry = json.loads(r["last_verdict"]) if r["last_verdict"] else {}
+            except ValueError:
+                entry = {}
+            if not isinstance(entry, dict):
+                entry = {}
+            entry.setdefault("address", r["wallet"])
+            entry["evaluated_at"] = (
+                time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(r["last_evaluated"]))
+                if r["last_evaluated"] else None
+            )
+            out.append(entry)
+        return out
+
+    def discover_universe_prune(
+        self, *, max_age_s: float, max_rows: int, now: float | None = None
+    ) -> int:
+        """修剪票池：last_seen 距今超过 max_age_s 的删；总行数超 max_rows 删 last_seen
+        最老的若干。返回删除行数。
+        """
+        now = time.time() if now is None else now
+        removed = 0
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM discover_universe WHERE last_seen < ?", (now - max_age_s,)
+            )
+            removed += cur.rowcount
+            max_rows = max(1, int(max_rows))
+            count = self._conn.execute(
+                "SELECT COUNT(*) AS c FROM discover_universe"
+            ).fetchone()["c"]
+            if count > max_rows:
+                cur = self._conn.execute(
+                    """DELETE FROM discover_universe WHERE wallet IN (
+                           SELECT wallet FROM discover_universe
+                           ORDER BY last_seen ASC LIMIT ?)""",
+                    (count - max_rows,),
+                )
+                removed += cur.rowcount
+        return removed
 
     def recent_orders(self, limit: int = 20) -> list[sqlite3.Row]:
         return self._conn.execute(

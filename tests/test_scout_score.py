@@ -128,14 +128,19 @@ def test_frequency_cap_tightened():
     assert any("机器人" in r for r in verdict.reasons)
 
 
-def test_buy_and_hold_gets_neutral_win_score():
+def test_buy_and_hold_excluded_by_judgeability_gate():
+    # 纯买入持有：默认招聘口径下被可判性闸拦（零配对卖出，战绩无法自证）
     tape = [Trade(proxy_wallet=ADDR, side="BUY", asset=f"tok{i}", condition_id=f"0xc{i}",
                   size=300, price=0.5, timestamp=NOW - i * 3600, transaction_hash=f"0x{i}")
             for i in range(25)]
     stats = replay(ADDR, tape)
     verdict = evaluate(stats, [], ScoutConfig(), now=NOW)
-    assert verdict.eligible
-    assert verdict.to_dict()["win_rate"] is None
+    assert not verdict.eligible
+    assert any("无法自证" in r for r in verdict.reasons)
+    # 关掉可判性闸（考核口径同款）后才进入打分：纯买入胜率未知给中性偏低分
+    scored = evaluate(stats, [], ScoutConfig(min_judgeable_sells=0), now=NOW)
+    assert scored.eligible
+    assert scored.to_dict()["win_rate"] is None
 
 
 def test_positions_exposure_and_unrealized():

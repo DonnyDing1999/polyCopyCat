@@ -35,6 +35,11 @@ class ScoutConfig:
     max_win_rate_sample: int = 50         # 套利判定所需的最少配对卖出数
     max_unrealized_drawdown_ratio: float = 0.5  # 持仓浮亏/成本 超过此比例 = 疑似死仓
     min_exposure_for_drawdown_usdc: float = 500.0  # 死仓判定所需的最小持仓成本
+    # 可判性闸（只在招聘口径）：配对卖出少于此数，胜率/盈亏都无从谈起——纯买入或
+    # 撒币账户能把所有「有卖出才判」的规则全绕过（500 笔全买入、零卖出的撸空投账户
+    # 现在能全规则通过）。堵这个洞。evaluate_health 用 replace(min_judgeable_sells=0)
+    # 关掉：在跟目标另有窗口净盈亏规则兜底，不受此闸影响。
+    min_judgeable_sells: int = 3
     # 跨场馆/跨账户套利单腿指纹：几乎不割肉（胜率异常高）+ 全在贴近1.0平仓。
     # 这类账户的输腿在别处（另一账户或场外博彩），本钱包只见幸存的赢腿，
     # 招聘版按盈亏/死仓完全看不穿，会给满分——专门一条规则筛掉。
@@ -106,6 +111,7 @@ def evaluate_health(
         config,
         min_exposure_for_drawdown_usdc=float("inf"),  # 关掉招聘版死仓规则
         min_realized_pnl=float("-inf"),               # 盈亏改用窗口净口径判
+        min_judgeable_sells=0,                        # 考核口径关掉可判性闸（窗口净盈亏兜底）
     )
     verdict = evaluate(stats, positions, base_config, now=now)
     reasons = list(verdict.reasons)
@@ -192,6 +198,11 @@ def evaluate(
         reasons.append(
             f"频率过高疑似机器人（{stats.trades_per_day:.0f} 笔/天 "
             f"> {config.max_trades_per_day:.0f}）"
+        )
+    if stats.matched_sells < config.min_judgeable_sells:
+        reasons.append(
+            f"配对卖出仅 {stats.matched_sells} 笔（< {config.min_judgeable_sells}），"
+            "战绩无法自证（纯买入/撒币账户）"
         )
     if stats.matched_sells >= config.min_pnl_sample and stats.realized_pnl < config.min_realized_pnl:
         reasons.append(f"回放已实现亏损（${stats.realized_pnl:,.2f}）")

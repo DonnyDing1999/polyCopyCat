@@ -48,6 +48,7 @@ class TradeStream:
         *,
         on_trade: Callable[[Trade], None],
         on_gap: Callable[[], None] | None = None,
+        on_all_trade: Callable[[Trade], None] | None = None,
         ws_url: str | None = None,
         topic: str = "activity",
         msg_type: str = "trades",
@@ -62,6 +63,9 @@ class TradeStream:
             raise ValueError("至少需要一个监控地址")
         self._on_trade = on_trade
         self._on_gap = on_gap
+        # 票池累积器挂点：在按监控地址过滤之前，把全站每一笔成交都喂给它（零 API 成本
+        # 地被动累积活跃地址）。None 时行为与过去完全一致（只回调命中地址的 on_trade）。
+        self._on_all_trade = on_all_trade
         self.ws_url = ws_url or os.environ.get(ENV_WS_URL) or DEFAULT_WS_URL
         self.topic = topic
         self.msg_type = msg_type
@@ -205,6 +209,12 @@ class TradeStream:
                 if not isinstance(entry, dict) or "proxyWallet" not in entry:
                     continue
                 trade = Trade.from_api(entry)
+                # 地址过滤之前：全站成交先喂票池累积器（非目标成交不进 on_trade）
+                if self._on_all_trade is not None:
+                    try:
+                        self._on_all_trade(trade)
+                    except Exception:  # noqa: BLE001 —— 累积回调炸了不能拖垮接收循环
+                        logger.exception("全站成交累积回调失败: %s", trade)
                 if trade.proxy_wallet in self._addresses:
                     trades.append(trade)
         return trades

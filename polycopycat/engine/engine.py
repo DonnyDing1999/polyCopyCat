@@ -139,6 +139,13 @@ class CopyEngine:
         # 巡检/发现计时用墙钟并持久化在账本 state 表：重启接着算，不从零
         self._last_health_check = time.time()
         self._last_discover = time.time()
+        # 票池累积器：stream 线程逐笔写内存增量，发现线程周期性批量落库（绝不逐笔写库）
+        self._universe_accum: dict[str, dict] = {}
+        self._universe_lock = threading.Lock()
+        self._eval_budget = 0.0                 # 涓流评估的小数预算累加器（支持 <1/min 速率）
+        self._last_universe_flush = time.time()   # stream 增量落库的 ~10 分钟节拍（独立于每日刷新）
+        self._last_discover_notify = time.time()  # 每小时摘要限流（内存态，重启延后首播 ≤1h，防刷屏）
+        self._discover_new_eligible: dict = {}  # 本小时新合格者（地址→Verdict，供摘要与招募）
         self._on_new_target = on_new_target
         # 标记哪些目标是自动招募的（重启后从档案恢复标记，保存时不丢历史）
         self._recruited: dict[str, dict] = {}
@@ -794,87 +801,261 @@ class CopyEngine:
                     "建议人工复查（auto_pause 已关闭，仍在跟单）"
                 )
 
-    # ---- 候选发现 ----
+    # ---- 候选发现（票池 + 涓流评估）----
+
+    def observe_site_trade(self, trade: Trade) -> None:
+        """stream 线程回调：把全站每一笔成交累进内存增量（发现线程稍后批量落库）。
+
+        零 API 成本的被动累积——全站峰值几十笔/秒，dict 累加没有压力；绝不逐笔写库。
+        发现关闭时直接丢弃（不累积，避免无人落库时内存无界增长）。
+        """
+        if self.config.health.discover_interval_s <= 0 or self._data is None:
+            return
+        wallet = trade.proxy_wallet
+        if not wallet:
+            return
+        notional = trade.notional
+        with self._universe_lock:
+            slot = self._universe_accum.get(wallet)
+            if slot is None:
+                self._universe_accum[wallet] = {
+                    "notional": notional, "trades": 1, "last_seen": trade.timestamp,
+                }
+            else:
+                slot["notional"] += notional
+                slot["trades"] += 1
+                slot["last_seen"] = max(slot["last_seen"], trade.timestamp)
 
     def _discover_loop(self) -> None:
-        # 每分钟醒来对表（墙钟 + 账本持久化），重启不再把 24h 计时清零
+        # 每分钟醒来涓流一小口（墙钟 + 账本持久化计时），重启不把周期计时清零
         while not self._reconcile_stop.wait(60):
             try:
-                self._maybe_discover()
+                self._discover_tick()
             except Exception:  # noqa: BLE001 —— 发现失败不影响任何主流程
                 logger.exception("候选发现失败，下一轮继续")
 
-    def _maybe_discover(self) -> None:
-        interval = self.config.health.discover_interval_s
-        if interval <= 0 or self._data is None:
+    def _discover_tick(self) -> None:
+        """一次发现节拍：（冷启动/到点）刷新票池 → 涓流评估 → 每小时摘要+招募。"""
+        if self.config.health.discover_interval_s <= 0 or self._data is None:
             return
         now = time.time()
-        if now - self._last_discover < interval:
-            return
-        self._last_discover = now
-        self._ledger.set_state("discover_last_run_ts", str(now))
-        self.discover_candidates_once()
+        if self._ledger.discover_universe_count() == 0:
+            # 冷启动：全新账本票池为空 → 立刻灌一批，不等周期
+            self._bootstrap_universe()
+            self._last_discover = now
+            self._ledger.set_state("discover_last_run_ts", str(now))
+        elif now - self._last_discover >= self.config.health.discover_interval_s:
+            # 到点：票池刷新（stream 增量落库 + 排行榜并轨 + 修剪）
+            self._refresh_universe()
+            self._last_discover = now
+            self._ledger.set_state("discover_last_run_ts", str(now))
+        if now - self._last_universe_flush >= 600:
+            # stream 增量按 ~10 分钟节拍独立落库：不等每日刷新，新活跃地址十分钟内
+            # 即进入涓流评估的候选范围；重启最多丢十分钟的内存增量
+            self._flush_universe_accumulator()
+            self._last_universe_flush = now
+        self._trickle_evaluate()
+        self._maybe_discover_summary(now)
 
-    def discover_candidates_once(self) -> int:
-        """扫全站活跃地址找可跟的新面孔：发现自动，加不加人由用户决定。
+    def _flush_universe_accumulator(self) -> int:
+        """把内存增量批量 upsert 进票池表并清空（发现线程调用）。
 
-        用 scout 的完整评估（回放 + 排除 + 打分）过一遍全站近期成交额
-        top N 的地址，合格且不在跟单名单里的写入账本同目录的
-        discover-latest.json，并通知前几名摘要。返回新面孔数量。
+        先在锁内换出整批、立刻释放锁，DB 写在锁外做——不拿累积器锁阻塞 stream 线程。
         """
-        if self._data is None:
+        with self._universe_lock:
+            if not self._universe_accum:
+                return 0
+            batch = self._universe_accum
+            self._universe_accum = {}
+        rows = [
+            {"wallet": w, "notional": v["notional"], "trades": v["trades"], "source": "stream"}
+            for w, v in batch.items()
+        ]
+        return self._ledger.discover_universe_upsert(rows)
+
+    def _leaderboard_fetch(self, window: str, rank_type: str) -> list[str]:
+        """拉一种排行榜组合，limit 500→100→50 逐档降级；三档全失败返回空（跳过该组合）。"""
+        from ..scout.runner import ScoutError, candidates_from_leaderboard
+
+        for limit in (500, 100, 50):
+            try:
+                return candidates_from_leaderboard(
+                    window=window, rank_type=rank_type, limit=limit
+                )
+            except ScoutError as exc:
+                logger.info(
+                    "排行榜 %s/%s limit=%d 拉取失败，降级重试: %s",
+                    window, rank_type, limit, exc,
+                )
+        logger.warning("排行榜 %s/%s 三档 limit 全失败，跳过该组合", window, rank_type)
+        return []
+
+    def _leaderboard_join(self) -> int:
+        """排行榜并轨：7d/30d × pnl/vol 四组合并入票池。
+
+        这些行没有逐地址成交额（notional 传 0、只保证在池、刷新 last_seen）；
+        某组合彻底拉不到就跳过它，全挂则本源不贡献。返回并入的地址数。
+        """
+        wallets: set[str] = set()
+        for window in ("7d", "30d"):
+            for rank_type in ("pnl", "vol"):
+                wallets.update(self._leaderboard_fetch(window, rank_type))
+        if not wallets:
+            logger.info("排行榜并轨：本轮没拿到任何候选（源不可用，已跳过）")
             return 0
-        from ..scout import ScoutConfig, scout_addresses
+        return self._ledger.discover_universe_upsert(
+            [{"wallet": w, "notional": 0.0, "trades": 0, "source": "leaderboard"} for w in wallets]
+        )
+
+    def _bootstrap_universe(self) -> None:
+        """冷启动填充：现有 candidates_from_recent_trades 全站快照 + 排行榜并轨，立刻灌池。"""
         from ..scout.runner import candidates_from_recent_trades
 
         n = self.config.health.discover_candidates
-        logger.info("候选发现：从全站最近成交挖活跃地址（top %d）……", n)
-        candidates = candidates_from_recent_trades(self._data, top=n)
-        fresh = [c for c in candidates if c not in self._targets]
-        if not fresh:
-            logger.info("候选发现：没有拿到新候选")
-            return 0
-        verdicts = scout_addresses(self._data, fresh, config=ScoutConfig())
-        eligible = [v for v in verdicts if v.eligible]
-        recruited = self._recruit(eligible)
+        try:
+            snapshot = candidates_from_recent_trades(self._data, top=n)
+        except DataApiError as exc:
+            logger.warning("冷启动全站快照拉取失败: %s", exc)
+            snapshot = []
+        if snapshot:
+            # 快照来源没有逐地址成交额（notional=0，真实成交额由 stream 增量补齐）；
+            # candidates_from_recent_trades 已按成交额降序，按序插入让 rowid 保留排名。
+            self._ledger.discover_universe_upsert(
+                [{"wallet": w, "notional": 0.0, "trades": 0, "source": "snapshot"} for w in snapshot]
+            )
+        lb = self._leaderboard_join()
+        logger.info("候选发现冷启动：快照 %d 个 + 排行榜 %d 个，票池已初始化", len(snapshot), lb)
 
+    def _refresh_universe(self) -> None:
+        """到点的票池刷新：stream 增量落库 + 排行榜并轨 + 修剪（时间 + 容量）。"""
+        flushed = self._flush_universe_accumulator()
+        lb = self._leaderboard_join()
+        pruned = self._ledger.discover_universe_prune(
+            max_age_s=7 * 86400,
+            max_rows=self.config.health.discover_universe_size * 4,
+        )
+        logger.info("票池刷新：stream 增量落库 %d、排行榜并轨 %d、修剪 %d", flushed, lb, pruned)
+
+    def _trickle_evaluate(self) -> int:
+        """每次醒来评估一小口：按优先级从票池取地址走 scout 完整评估，结论写回票池行。
+
+        速率 = discover_eval_per_min（float，≤0 关闭）；用小数预算累加器支持 <1/min 的
+        速率。候选优先级（未评估 > 冷却到期）、冷却、剔除在跟/黑名单全在 Ledger 里判。
+        """
+        per = self.config.health.discover_eval_per_min
+        if per <= 0:
+            return 0
+        self._eval_budget += per
+        n = int(self._eval_budget)
+        if n <= 0:
+            return 0
+        self._eval_budget -= n
+
+        from ..scout import ScoutConfig, scout_addresses
+
+        exclude = set(self._targets) | set(self.config.health.recruit_blocklist)
+        due = self._ledger.discover_universe_due(
+            limit=n,
+            universe_size=self.config.health.discover_universe_size,
+            reeval_after_s=self.config.health.discover_reeval_days * 86400,
+            exclude=exclude,
+        )
+        if not due:
+            return 0
+        verdicts = scout_addresses(self._data, due, config=ScoutConfig())
+        now = time.time()
+        for v in verdicts:
+            self._ledger.discover_universe_record_eval(
+                v.address, score=v.score, eligible=v.eligible,
+                verdict=v.to_dict(), now=now,
+            )
+            if v.eligible and v.address not in self._targets:
+                self._discover_new_eligible[v.address] = v  # 攒到每小时摘要点
+        return len(due)
+
+    def _maybe_discover_summary(self, now: float) -> None:
+        """每小时最多一条摘要 + 招募当小时新合格者；滚动名录随之刷新。"""
+        if now - self._last_discover_notify < 3600:
+            return
+        self._last_discover_notify = now
+        new = sorted(self._discover_new_eligible.values(), key=lambda v: -v.score)
+        self._discover_new_eligible.clear()
+        recruited = self._recruit(new)          # 招募时机改到摘要点，用当小时新合格者
+        self._write_discover_roster(now)        # 再写名录：自动排除刚招募进池的地址
+        fresh = self._dedup_notify(new, now)    # 同一地址 7 天内不重复上榜通知
+        if fresh or recruited:
+            self._notifier.send(self._discover_summary_text(fresh, recruited))
+
+    def _dedup_notify(self, verdicts, now: float) -> list:
+        """7 天去重：返回本轮该上榜通知的新合格者，并把它们记进已通知集合（持久化到 state）。
+
+        读写时顺手清掉 7 天前的过期项，集合不会无限膨胀。
+        """
+        raw = self._ledger.get_state("discover_notified")
+        try:
+            notified = json.loads(raw) if raw else {}
+        except ValueError:
+            notified = {}
+        if not isinstance(notified, dict):
+            notified = {}
+        cutoff = now - 7 * 86400
+        notified = {
+            a: ts for a, ts in notified.items()
+            if isinstance(ts, (int, float)) and ts >= cutoff
+        }
+        fresh = []
+        for v in verdicts:
+            if v.address in notified:
+                continue
+            notified[v.address] = now
+            fresh.append(v)
+        self._ledger.set_state("discover_notified", json.dumps(notified))
+        return fresh
+
+    def _discover_summary_text(self, fresh, recruited) -> str:
+        lines = [
+            f"🔭 候选发现摘要：新合格 {len(fresh)} 个面孔（票池涓流评估，均不在跟单名单）。Top："
+        ]
+        for v in fresh[:5]:
+            s = v.stats
+            if s:
+                win = f"{s.win_rate:.0%}({s.matched_sells})" if s.win_rate is not None else "未知"
+                lines.append(
+                    f"  {_short(v.address)} 分{v.score:.0f} 盈亏${s.realized_pnl:+,.0f} "
+                    f"胜率{win} 笔均${s.avg_trade_usdc:,.0f}"
+                )
+            else:
+                lines.append(f"  {_short(v.address)} 分{v.score:.0f}")
+        if recruited:
+            health = self.config.health
+            lines.append(
+                f"🤝 已自动加入纸面跟单 {len(recruited)} 个："
+                + "、".join(_short(a) for a in recruited)
+                + f"（ratio {health.recruit_ratio} / 单笔 ${health.recruit_max_per_trade_usdc:.0f}，"
+                "变质由健康巡检自动暂停）"
+            )
+        elif fresh:
+            out_path = Path(self.config.ledger_path).parent / "discover-latest.json"
+            lines.append(f"完整名单 {out_path}；要跟谁，编辑配置 targets 后重启")
+        return "\n".join(lines)
+
+    def _write_discover_roster(self, now: float) -> None:
+        """滚动名录 discover-latest.json：票池里当前合格且不在跟的全部地址（按分数降序）。
+
+        原子写（tmp + replace）。eligible 每项是最近一次评估的 Verdict.to_dict() + evaluated_at。
+        """
         out_path = Path(self.config.ledger_path).parent / "discover-latest.json"
+        eligible = self._ledger.discover_universe_roster(exclude=set(self._targets))
         payload = {
-            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "evaluated": len(fresh),
-            "eligible": [v.to_dict() for v in eligible],
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+            "universe_size": self._ledger.discover_universe_count(),
+            "evaluated_24h": self._ledger.discover_evaluated_since(now - 86400),
+            "eligible": eligible,
         }
         tmp = out_path.with_suffix(".tmp")
         tmp.parent.mkdir(parents=True, exist_ok=True)
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(out_path)
-
-        if eligible:
-            lines = [
-                f"🔭 候选发现：评估 {len(fresh)} 个活跃地址，合格 {len(eligible)} 个（均不在跟单名单）。Top："
-            ]
-            for v in eligible[:5]:
-                s = v.stats
-                win = f"{s.win_rate:.0%}({s.matched_sells})" if s and s.win_rate is not None else "未知"
-                pnl = f"${s.realized_pnl:+,.0f}" if s else "?"
-                lines.append(
-                    f"  {_short(v.address)} 分{v.score:.0f} 盈亏{pnl} 胜率{win} 笔均${s.avg_trade_usdc:,.0f}"
-                    if s else f"  {_short(v.address)} 分{v.score:.0f}"
-                )
-            if recruited:
-                health = self.config.health
-                lines.append(
-                    f"🤝 已自动加入纸面跟单 {len(recruited)} 个："
-                    + "、".join(_short(a) for a in recruited)
-                    + f"（ratio {health.recruit_ratio} / 单笔 ${health.recruit_max_per_trade_usdc:.0f}，"
-                    "变质由健康巡检自动暂停）"
-                )
-            else:
-                lines.append(f"完整名单 {out_path}；要跟谁，编辑配置 targets 后重启")
-            self._notifier.send("\n".join(lines))
-        else:
-            logger.info("候选发现：评估 %d 个，无合格新面孔", len(fresh))
-        return len(eligible)
 
     def _recruit(self, eligible) -> list[str]:
         """把合格新面孔自动加入跟单（仅纸面模式），并持久化到招募档案。

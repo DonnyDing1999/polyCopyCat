@@ -226,8 +226,11 @@ class HealthConfig:
     check_interval_s: float = 21600.0  # 巡检周期；0 或 null 关闭（默认 6 小时）
     auto_pause: bool = True            # 命中排除规则自动暂停（否则只通知）
     auto_resume: bool = True           # 仅对被巡检暂停的目标：恢复合格自动复跟
-    discover_interval_s: float = 86400.0  # 候选发现周期：扫全站活跃地址找可跟的新面孔；0/null 关
-    discover_candidates: int = 100        # 每轮评估多少个活跃地址
+    discover_interval_s: float = 86400.0  # 票池刷新周期：排行榜并轨 + stream 增量落库 + 修剪；0/null 关整个发现
+    discover_candidates: int = 100        # 冷启动快照灌池的 top N（全新账本首次填充用）
+    discover_universe_size: int = 5000    # 涓流评估的候选范围：按成交额降序前 N 名（修剪容量为其 4 倍）
+    discover_eval_per_min: float = 2.0    # 涓流速率：每次醒来（约每分钟）最多评估几个地址；≤0 关涓流
+    discover_reeval_days: float = 3.0     # 已评估地址的复评冷却天数（冷却内不重复评估）
     auto_recruit: bool = False            # 合格新面孔自动加入跟单（仅纸面模式生效）
     recruit_ratio: float = 0.05           # 招募目标的跟单比例（比常规目标保守）
     recruit_max_per_trade_usdc: float = 25.0  # 招募目标的单笔上限
@@ -262,6 +265,17 @@ class HealthConfig:
                     "每轮要拉候选数×2 个接口（默认 100 人 ≈ 200 请求），下限 3600"
                 )
         self.discover_candidates = max(1, int(self.discover_candidates))
+        self.discover_universe_size = max(1, int(self.discover_universe_size))
+        # 涓流速率允许 ≤0（关闭涓流），故不用 _positive；只校验是数字
+        try:
+            self.discover_eval_per_min = float(self.discover_eval_per_min)
+        except (TypeError, ValueError):
+            raise ConfigError(
+                f"health.discover_eval_per_min 应为数字，实际是 {self.discover_eval_per_min!r}"
+            ) from None
+        self.discover_reeval_days = _positive(
+            "health.discover_reeval_days", self.discover_reeval_days, allow_none=False
+        )
         self.auto_recruit = bool(self.auto_recruit)
         self.recruit_ratio = _positive("health.recruit_ratio", self.recruit_ratio, allow_none=False)
         self.recruit_max_per_trade_usdc = _positive(

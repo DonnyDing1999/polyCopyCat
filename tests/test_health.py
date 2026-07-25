@@ -174,7 +174,7 @@ def test_disabled_by_zero_interval():
     assert engine._targets[ADDR_B].paused is False
 
 
-# ---- 候选发现（扫全站活跃地址找新面孔）----
+# ---- 招募/发现相关的公用 fake（票池 + 涓流发现的测试见 tests/test_discover.py）----
 
 NEW1 = "0x" + "c" * 40   # 健康新面孔
 NEW2 = "0x" + "d" * 40   # 不合格新面孔（空成交带）
@@ -189,109 +189,7 @@ class DiscoverData(FakeDataClient):
         return self.firehose if offset == 0 else []
 
 
-def _fire(wallet, n, tx_prefix):
-    now = int(time.time())
-    return [
-        Trade(proxy_wallet=wallet, side="BUY", asset="tokF", condition_id="0xf",
-              size=500, price=0.5, timestamp=now - i, title="F", outcome="Yes",
-              transaction_hash=f"{tx_prefix}{i}")
-        for i in range(n)
-    ]
-
-
-def test_discover_finds_new_eligible_and_skips_existing(tmp_path):
-    # 全站流里活跃度：NEW1、NEW2、以及已在跟的 ADDR_A
-    firehose = _fire(NEW1, 6, "0xn1") + _fire(NEW2, 5, "0xn2") + _fire(ADDR_A, 4, "0xa")
-    data = DiscoverData(
-        firehose,
-        tapes={NEW1: healthy_tape(NEW1), NEW2: [], ADDR_A: healthy_tape(ADDR_A)},
-    )
-    engine, notifier = make_engine(data)
-    engine.config.ledger_path = str(tmp_path / "ledger.sqlite3")
-
-    found = engine.discover_candidates_once()
-    assert found == 1  # 只有 NEW1 合格；ADDR_A 在跟不参评；NEW2 不合格
-
-    import json as _json
-    payload = _json.loads((tmp_path / "discover-latest.json").read_text())
-    assert payload["evaluated"] == 2
-    assert [v["address"] for v in payload["eligible"]] == [NEW1]
-    assert any("候选发现" in m and "0xcccc" in m for m in notifier.messages)
-
-
-def test_discover_disabled_no_thread():
-    data = DiscoverData([], tapes={})
-    engine, _ = make_engine(data, discover_interval_s=0)
-    assert engine.config.health.discover_interval_s == 0.0
-
-
-def test_discover_no_candidates_writes_nothing(tmp_path):
-    data = DiscoverData([], tapes={})
-    engine, notifier = make_engine(data)
-    engine.config.ledger_path = str(tmp_path / "ledger.sqlite3")
-    assert engine.discover_candidates_once() == 0
-    assert not (tmp_path / "discover-latest.json").exists()
-    assert notifier.messages == []
-
-
-# ---- 自动招募（动态加人跟单）----
-
-def test_auto_recruit_adds_target_and_persists(tmp_path):
-    firehose = _fire(NEW1, 6, "0xn1") + _fire(NEW2, 5, "0xn2")
-    data = DiscoverData(firehose, tapes={NEW1: healthy_tape(NEW1), NEW2: []})
-    followed = []
-    engine, notifier = make_engine(
-        data, auto_recruit=True, recruit_ratio=0.05,
-        recruit_max_per_trade_usdc=25, recruit_max_targets=15,
-    )
-    engine._on_new_target = followed.append
-    engine.config.ledger_path = str(tmp_path / "ledger.sqlite3")
-
-    assert engine.discover_candidates_once() == 1
-    # NEW1 成为在跟目标，参数用招募档位
-    assert NEW1 in engine._targets
-    assert engine._targets[NEW1].ratio == 0.05
-    assert engine._targets[NEW1].max_per_trade_usdc == 25
-    assert followed == [NEW1]
-    assert any("自动加入纸面跟单" in m for m in notifier.messages)
-    # 档案落盘
-    import json as _json
-    entries = _json.loads((tmp_path / "recruited.json").read_text())
-    assert [e["address"] for e in entries] == [NEW1]
-    # 第二轮：NEW1 已在跟，不再参评也不重复招募
-    assert engine.discover_candidates_once() == 0
-    assert len([a for a in engine._targets if a == NEW1]) == 1
-
-
-def test_auto_recruit_respects_cap(tmp_path):
-    firehose = _fire(NEW1, 6, "0xn1")
-    data = DiscoverData(firehose, tapes={NEW1: healthy_tape(NEW1)})
-    engine, _ = make_engine(data, auto_recruit=True, recruit_max_targets=2)  # 已有 2 目标
-    engine.config.ledger_path = str(tmp_path / "ledger.sqlite3")
-    engine.discover_candidates_once()
-    assert NEW1 not in engine._targets  # 到顶不招
-    assert not (tmp_path / "recruited.json").exists()
-
-
-def test_auto_recruit_paper_only(tmp_path):
-    firehose = _fire(NEW1, 6, "0xn1")
-    data = DiscoverData(firehose, tapes={NEW1: healthy_tape(NEW1)})
-    config = EngineConfig.from_dict({
-        "mode": "live",
-        "targets": [{"address": ADDR_A}],
-        "risk": {"kill_switch_file": ""},
-        "aggregate": {"window_s": 0},
-        "health": {"auto_recruit": True},
-        "live": {"i_understand_live_trading_risk": True},
-    })
-    config.ledger_path = str(tmp_path / "ledger.sqlite3")
-    clob = FakeClob()
-    engine = CopyEngine(config, clob=clob, ledger=Ledger(":memory:"),
-                        executor=PaperExecutor(clob), notifier=ListNotifier(),
-                        data_client=data)
-    engine.discover_candidates_once()
-    assert NEW1 not in engine._targets  # 实盘绝不自动加人
-
+# ---- 自动招募档案的重启并回（merge_recruited_targets，与发现架构无关）----
 
 def test_merge_recruited_targets_restores_on_restart(tmp_path):
     from polycopycat.engine.engine import merge_recruited_targets
@@ -314,18 +212,6 @@ def test_merge_recruited_targets_restores_on_restart(tmp_path):
                         executor=PaperExecutor(clob), notifier=ListNotifier(),
                         data_client=DiscoverData([], tapes={}))
     assert NEW1 in engine._recruited
-
-
-def test_blocklist_blocks_recruit(tmp_path):
-    """scout 打分合格、但人工拉黑的地址永不进池。"""
-    firehose = _fire(NEW1, 6, "0xn1")
-    data = DiscoverData(firehose, tapes={NEW1: healthy_tape(NEW1)})
-    engine, _ = make_engine(data, auto_recruit=True, recruit_blocklist=[NEW1.upper()])
-    engine.config.ledger_path = str(tmp_path / "ledger.sqlite3")
-
-    assert engine.discover_candidates_once() == 1  # 仍算合格候选，只是不招
-    assert NEW1 not in engine._targets
-    assert not (tmp_path / "recruited.json").exists()
 
 
 def test_blocklist_evicts_already_recruited_on_restart(tmp_path):
@@ -360,16 +246,6 @@ def test_health_actions_recorded_as_events():
     summary = engine._ledger.target_event_summary()
     assert summary[ADDR_B]["pauses"] == 1
     assert summary[ADDR_B]["last_kind"] == "health_resume"
-
-
-def test_recruit_recorded_as_event(tmp_path):
-    firehose = _fire(NEW1, 6, "0xn1")
-    data = DiscoverData(firehose, tapes={NEW1: healthy_tape(NEW1)})
-    engine, _ = make_engine(data, auto_recruit=True)
-    engine.config.ledger_path = str(tmp_path / "ledger.sqlite3")
-    engine.discover_candidates_once()
-    summary = engine._ledger.target_event_summary()
-    assert summary[NEW1]["recruits"] == 1
 
 
 # ---- 状态持久化：暂停名单与计时重启不清 ----
@@ -434,25 +310,6 @@ def test_persisted_timer_triggers_overdue_check(tmp_path):
     engine, _ = make_engine_with_ledger(data, ledger1)
     engine._maybe_check_health()            # 超期 → 立即触发
     assert engine._targets[ADDR_B].paused is True
-    ledger1.close()
-
-
-def test_discover_timer_persisted_and_gated(tmp_path):
-    db = tmp_path / "l.sqlite3"
-    ledger1 = Ledger(db)
-    firehose = _fire(NEW1, 6, "0xn1")
-    data = DiscoverData(firehose, tapes={NEW1: healthy_tape(NEW1)})
-    engine, _ = make_engine_with_ledger(data, ledger1)
-    engine.config.ledger_path = str(tmp_path / "lg.sqlite3")
-    engine._maybe_discover()                # 刚启动未满周期 → 不跑
-    assert not (tmp_path / "lg.sqlite3").parent.joinpath("discover-latest.json").exists() or True
-    assert engine._ledger.get_state("discover_last_run_ts") is None
-
-    ledger1.set_state("discover_last_run_ts", str(time.time() - 90000))  # 超期
-    engine._load_persisted_state()
-    engine._maybe_discover()                # 超期 → 跑，且落新时间戳
-    assert engine._ledger.get_state("discover_last_run_ts") is not None
-    assert (tmp_path / "discover-latest.json").exists()
     ledger1.close()
 
 

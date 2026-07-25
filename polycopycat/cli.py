@@ -298,6 +298,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             addresses,
             on_trade=watcher.ingest,
             on_gap=watcher.request_poll,
+            # 票池累积器：全站成交在地址过滤前先喂给引擎（发现关闭时引擎侧自动丢弃）
+            on_all_trade=engine.observe_site_trade,
             ws_url=args.ws_url or config.ws_url,
         )
         stream.start()
