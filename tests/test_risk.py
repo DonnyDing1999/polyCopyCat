@@ -105,3 +105,75 @@ def test_day_start_is_today_midnight():
     local = time.localtime(start)
     assert (local.tm_hour, local.tm_min, local.tm_sec) == (0, 0, 0)
     assert time.time() - start < 86400 + 1
+
+
+# ---- 单目标单市场敞口闸 ----
+
+T1 = "0x" + "1" * 40
+T2 = "0x" + "2" * 40
+
+
+def seed_fill(ledger, target, side, size, price, cond="0xcond", token="tok1", apply_fill=True):
+    """记一笔归属到 target、在 cond 市场的成交订单（经 signal 归因）。"""
+    tr = Trade(proxy_wallet=target, side=side, asset=token, condition_id=cond,
+               size=size, price=price, timestamp=int(time.time()),
+               transaction_hash=f"0x{side}{token}{size}{price}")
+    sid, _ = ledger.record_signal(
+        Signal(trade=tr, target=TargetConfig(address=target), received_at=time.time())
+    )
+    ledger.record_order(sid, intent(side=side, size=size, limit=price, token=token, cond=cond),
+                        mode="paper", status="filled", filled_size=size, avg_price=price,
+                        apply_fill=apply_fill)
+
+
+def test_target_market_net_cost_buy_minus_sell(ledger):
+    seed_fill(ledger, T1, "BUY", 100, 0.5)                 # +50
+    seed_fill(ledger, T1, "SELL", 40, 0.5)                 # -20 → 净 30
+    assert abs(ledger.target_market_net_cost(T1, "0xcond") - 30.0) < 1e-9
+    assert ledger.target_market_net_cost(T2, "0xcond") == 0.0    # 另一目标独立归因
+    assert ledger.target_market_net_cost(T1, "0xother") == 0.0   # 另一市场独立
+
+
+def test_target_market_net_cost_floored_at_zero(ledger):
+    seed_fill(ledger, T1, "BUY", 40, 0.5)                            # +20
+    seed_fill(ledger, T1, "SELL", 100, 0.5, apply_fill=False)        # -50 → -30 → 下限 0
+    assert ledger.target_market_net_cost(T1, "0xcond") == 0.0
+
+
+def test_per_target_exposure_disabled_by_default(ledger):
+    seed_fill(ledger, T1, "BUY", 1000, 0.5)  # 该目标该市场已 $500
+    gate = RiskGate(RiskConfig(kill_switch_file="", max_market_exposure_per_target_usdc=None,
+                               max_market_exposure_usdc=None, max_total_exposure_usdc=None),
+                    ledger)
+    ok, _ = gate.check(intent(size=1000, limit=0.5), market(), T1)  # 再买 $500，闸关不拦
+    assert ok
+
+
+def test_per_target_exposure_caps_buy_allows_sell(ledger):
+    seed_fill(ledger, T1, "BUY", 100, 0.5)  # T1 该市场净成本 $50
+    gate = RiskGate(RiskConfig(kill_switch_file="", max_market_exposure_per_target_usdc=60.0,
+                               max_market_exposure_usdc=None, max_total_exposure_usdc=None),
+                    ledger)
+    ok, _ = gate.check(intent(size=10, limit=0.5), market(), T1)       # 50+5 ≤ 60
+    assert ok
+    ok, reason = gate.check(intent(size=30, limit=0.5), market(), T1)  # 50+15 > 60
+    assert not ok and "单目标单市场" in reason and "1111" in reason
+    # 卖出永不拦，即使远超上限
+    ok, _ = gate.check(intent(side="SELL", size=1000, limit=0.5), market(), T1)
+    assert ok
+    # 另一目标在同一市场独立计额度：T2 净成本为 0，同样的买入放行
+    ok, _ = gate.check(intent(size=30, limit=0.5), market(), T2)
+    assert ok
+
+
+def test_per_target_exposure_deducts_sells(ledger):
+    seed_fill(ledger, T1, "BUY", 100, 0.5)   # +50
+    seed_fill(ledger, T1, "SELL", 40, 0.5)   # -20 → 净 30
+    gate = RiskGate(RiskConfig(kill_switch_file="", max_market_exposure_per_target_usdc=60.0,
+                               max_market_exposure_usdc=None, max_total_exposure_usdc=None),
+                    ledger)
+    # 净成本 30：再买 notional 30（30+30=60）恰好压线放行；若不抵扣卖出（50+30=80）会被拦
+    ok, _ = gate.check(intent(size=60, limit=0.5), market(), T1)
+    assert ok
+    ok, reason = gate.check(intent(size=64, limit=0.5), market(), T1)  # 30+32 > 60
+    assert not ok and "单目标单市场" in reason

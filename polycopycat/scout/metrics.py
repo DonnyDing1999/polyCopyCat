@@ -21,6 +21,10 @@ _MM_MIN_SIDE = 2  # 同一 token 买/卖各达此次数才算「深度双向循�
 
 DEFAULT_QUICK_WINDOW_S = 600.0
 DEFAULT_HIGH_CLOSE_PRICE = 0.90  # 卖价高于此视为「赢面已定才平仓」（套利/对冲指纹）
+# 极端价买入：这类买入没有延迟复制空间——高价（>0.85）没肉可赚，低价（<0.10）
+# longshot 的滑点占比毁灭性。买入落在这两端的成交额占比是打分里「可跟性」的一轴。
+EXTREME_HIGH_PRICE = 0.85
+EXTREME_LOW_PRICE = 0.10
 
 
 @dataclass
@@ -43,6 +47,12 @@ class TraderStats:
     last_ts: int = 0
     median_holding_s: float = 0.0
     holdings_s: list[float] = field(default_factory=list, repr=False)
+    # 每笔配对卖出的已实现盈亏（closable×(price-avg_cost)，与 realized_pnl 累加同口径）；
+    # 用于 top_win_share：盈利是不是全靠一把梭撑起来的。
+    sell_pnls: list[float] = field(default_factory=list, repr=False)
+    # 极端价买入占比的支撑字段（按 notional 加权，不是按笔数）
+    buy_notional_total: float = 0.0    # 买入总成交额
+    buy_notional_extreme: float = 0.0  # 其中落在极端价（>0.85 或 <0.10）的部分
     # 慢速做市/流动性提供指纹（从流水按 token 统计，与持仓时长无关）
     notional_total: float = 0.0        # 总成交额（买+卖）
     notional_churn: float = 0.0        # 「深度双向循环」token 上的成交额（买≥2且卖≥2）
@@ -56,6 +66,27 @@ class TraderStats:
     @property
     def quick_flip_ratio(self) -> float:
         return self.quick_flips / self.matched_sells if self.matched_sells else 0.0
+
+    @property
+    def top_win_share(self) -> float:
+        """最大单笔卖出盈利 / 全部正卖出盈利之和；无正盈利记 1.0。
+
+        接近 1 = 盈亏几乎全靠一把梭（中了 longshot 的幸存者），无可复制的判断；
+        越低说明盈利分散在多笔上，风格更稳、更值得跟。
+        """
+        wins = [p for p in self.sell_pnls if p > 0]
+        if not wins:
+            return 1.0
+        total = sum(wins)
+        return max(wins) / total if total > 0 else 1.0
+
+    @property
+    def extreme_price_buy_ratio(self) -> float:
+        """买入成交额里落在极端价（>0.85 或 <0.10）的占比，按 notional 加权。"""
+        return (
+            self.buy_notional_extreme / self.buy_notional_total
+            if self.buy_notional_total > 0 else 0.0
+        )
 
     @property
     def high_close_ratio(self) -> float:
@@ -118,6 +149,9 @@ def replay(
         size, avg_cost, entry_ts = book.get(trade.asset, [0.0, 0.0, 0.0])
         if trade.side == "BUY":
             stats.n_buys += 1
+            stats.buy_notional_total += trade.notional
+            if trade.price > EXTREME_HIGH_PRICE or trade.price < EXTREME_LOW_PRICE:
+                stats.buy_notional_extreme += trade.notional
             new_size = size + trade.size
             avg_cost = (size * avg_cost + trade.size * trade.price) / new_size
             entry_ts = (size * entry_ts + trade.size * trade.timestamp) / new_size
@@ -130,7 +164,9 @@ def replay(
             stats.unmatched_sells += 1
             continue
         stats.matched_sells += 1
-        stats.realized_pnl += closable * (trade.price - avg_cost)
+        pnl = closable * (trade.price - avg_cost)
+        stats.realized_pnl += pnl
+        stats.sell_pnls.append(pnl)
         if trade.price > avg_cost:
             stats.wins += 1
         if trade.price >= high_close_price:

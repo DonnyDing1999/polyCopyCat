@@ -433,6 +433,26 @@ class Ledger:
         ).fetchone()
         return row["c"]
 
+    def target_market_net_cost(self, target: str, condition_id: str) -> float:
+        """某目标在某市场的净跟入成本，下限 0。
+
+        = Σ(BUY 订单 filled_size×avg_price) − Σ(SELL 订单 filled_size×avg_price)，两侧都经
+        orders JOIN signals ON signal_id 归因到该 target、按 condition_id 过滤、filled_size>0。
+        signal_id=0 的结算/强平单不挂任何目标（signals.id 自增从 1 起，JOIN 天然把它们排除），
+        不参与——市场结算后该市场也不会再有新买，这点误差可接受。走同一把锁。
+        """
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT COALESCE(SUM(
+                         CASE WHEN o.side = 'BUY' THEN o.filled_size * o.avg_price
+                              WHEN o.side = 'SELL' THEN -o.filled_size * o.avg_price
+                              ELSE 0 END), 0) AS c
+                   FROM orders o JOIN signals s ON o.signal_id = s.id
+                   WHERE s.target = ? AND o.condition_id = ? AND o.filled_size > 0""",
+                (target, condition_id),
+            ).fetchone()
+        return max(0.0, row["c"])
+
     def total_cost(self) -> float:
         row = self._conn.execute(
             "SELECT COALESCE(SUM(size * avg_cost), 0) AS c FROM positions"

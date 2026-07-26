@@ -28,6 +28,7 @@
   },
   "risk": {
     "max_market_exposure_usdc": 200,
+    "max_market_exposure_per_target_usdc": null,
     "max_total_exposure_usdc": 1000,
     "daily_max_loss_usdc": 100,
     "market_blacklist": [],

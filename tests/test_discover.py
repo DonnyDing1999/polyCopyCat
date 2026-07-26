@@ -99,7 +99,10 @@ def _fire(wallet, n):
 
 
 def elig_tape(wallet, markets=12):
-    """一条能过 scout 招聘全部规则的成交带（含配对卖出、近期活跃、非做市）。"""
+    """一条能过 scout 招聘全部规则的成交带（含配对卖出、近期活跃、非做市）。
+
+    持仓 2h：需高于 min_median_holding_s（1h）的速刷/做市持仓时长闸，否则会被排除。
+    """
     now = int(time.time())
     tape = []
     for i in range(markets):
@@ -108,7 +111,7 @@ def elig_tape(wallet, markets=12):
                           condition_id=f"0xc{i}", size=500, price=0.40, timestamp=base,
                           title="M", outcome="Yes", transaction_hash=f"0x{wallet[-3:]}b{i}"))
         tape.append(Trade(proxy_wallet=wallet, side="SELL", asset=f"tk{i}",
-                          condition_id=f"0xc{i}", size=500, price=0.55, timestamp=base + 1800,
+                          condition_id=f"0xc{i}", size=500, price=0.55, timestamp=base + 7200,
                           title="M", outcome="Yes", transaction_hash=f"0x{wallet[-3:]}s{i}"))
     return tape
 

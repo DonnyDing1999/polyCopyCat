@@ -10,7 +10,7 @@ from .stream import TradeStream
 from .us import UsApiClient, UsApiError
 from .watcher import TradeWatcher
 
-__version__ = "0.31.0"
+__version__ = "0.32.0"
 
 __all__ = [
     "DataApiClient",

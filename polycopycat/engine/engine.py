@@ -498,7 +498,8 @@ class CopyEngine:
 
     def _execute_planned(self, item: _Planned) -> None:
         group, intent = item.group, item.intent
-        ok, reason = self._risk.check(intent, item.market)
+        # 目标地址从信号组传入，供风控的单目标单市场敞口闸归因
+        ok, reason = self._risk.check(intent, item.market, group.target.address)
         if not ok:
             self._mark_group(group, "risk_blocked", reason)
             self._notifier.send(f"⛔ 风控拦截：{reason} —— {self._label(group)}")

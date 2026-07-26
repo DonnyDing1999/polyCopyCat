@@ -2,7 +2,12 @@ import time
 
 from polycopycat.models import Position, Trade
 from polycopycat.scout.metrics import replay
-from polycopycat.scout.score import ScoutConfig, evaluate
+from polycopycat.scout.score import (
+    ScoutConfig,
+    evaluate,
+    evaluate_health,
+    wilson_lower_bound,
+)
 
 ADDR = "0x" + "a" * 40
 NOW = 1_800_000_000
@@ -311,11 +316,16 @@ def test_directional_winner_not_flagged_as_arb():
 
 
 def test_arb_rule_needs_sample():
-    """样本不足（<20 配对卖出）时套利规则不触发，避免误杀小样本。"""
+    """样本不足（<arb_min_sample=10 配对卖出）时套利规则不触发，避免误杀小样本。
+
+    arb_min_sample 已由 20 收紧到 10：用 9 笔（<10）验证阈下不触发；min_trades 降到 10
+    让这条 18 笔的短带不被「样本不足」先行排除，从而干净地隔离套利规则本身。
+    """
     wallet = "0x" + "7" * 40
-    stats = replay(wallet, _tape_high_close(wallet, 12, sell_price=0.97))
-    assert stats.win_rate == 1.0 and stats.high_close_ratio == 1.0
-    v = evaluate(stats, [], ScoutConfig())
+    stats = replay(wallet, _tape_high_close(wallet, 9, sell_price=0.97))
+    assert stats.win_rate == 1.0 and stats.high_close_ratio == 1.0 and stats.matched_sells == 9
+    v = evaluate(stats, [], ScoutConfig(min_trades=10))
+    assert v.eligible, v.reasons
     assert not any("套利单腿" in r for r in v.reasons)
 
 
@@ -399,3 +409,167 @@ def test_churn_metrics_computed():
     stats=replay(wallet,_tape_market_maker(wallet,n_tokens=5,cycles=2,spread=0.02))
     assert 0.99 < stats.churn_notional_ratio <= 1.0
     assert abs(stats.median_two_side_spread - 0.02) < 1e-6
+
+
+# ---- 打分 v2：Wilson 下界 ----
+
+def test_wilson_lower_bound_known_values():
+    # 标准 95%（z=1.96）已知值
+    assert abs(wilson_lower_bound(10, 10) - 0.7225) < 1e-3
+    assert abs(wilson_lower_bound(50, 100) - 0.4038) < 1e-3
+    assert abs(wilson_lower_bound(90, 100) - 0.8256) < 1e-3
+    assert wilson_lower_bound(0, 0) == 0.0
+    assert wilson_lower_bound(0, 10) == 0.0  # 0 胜下界为 0
+
+
+def test_wilson_lower_bound_penalizes_small_sample():
+    # 同为 80% 胜率，样本越大下界越高（惩罚小样本运气户）
+    assert wilson_lower_bound(8, 10) < wilson_lower_bound(80, 100)
+    # 100% 但样本小 → 下界被压到 1 以下
+    assert wilson_lower_bound(10, 10) < 1.0
+    assert wilson_lower_bound(100, 100) > wilson_lower_bound(10, 10)
+
+
+# ---- 打分 v2：各分量端点与权重（隔离单轴，delta 应等于该轴权重）----
+
+def _axis_config():
+    # 关掉持仓/套利排除，让各轴变体都能进入打分段做隔离对比
+    return ScoutConfig(min_median_holding_s=0.0, max_win_rate_sample=10**9,
+                       arb_min_sample=10**9)
+
+
+def _axis_base():
+    # 干净合格画像：40 市场、长持、盈利分散、无极端价买入
+    return replay(ADDR, tape_winner(n_markets=40))
+
+
+def test_roi_axis_endpoint_weight_30():
+    cfg = _axis_config()
+    lo = _axis_base(); lo.realized_pnl = 0.0                     # ROI 0 → 0 分
+    hi = _axis_base(); hi.realized_pnl = hi.notional * 0.10      # ROI 0.10 → 拉满 30
+    d = evaluate(hi, [], cfg, now=NOW).score - evaluate(lo, [], cfg, now=NOW).score
+    assert abs(d - 30.0) < 0.15
+
+
+def test_wilson_axis_endpoint_weight_20():
+    cfg = _axis_config()
+    lo = _axis_base(); lo.wins = 20   # 20/40=50% → Wilson 下界 ~0.35 < floor 0.5 → 0 分
+    hi = _axis_base(); hi.wins = 40   # 40/40 → 下界 ~0.91 > target 0.8 → 拉满 20
+    d = evaluate(hi, [], cfg, now=NOW).score - evaluate(lo, [], cfg, now=NOW).score
+    assert abs(d - 20.0) < 0.15
+
+
+def test_holding_axis_endpoints_and_log_interp():
+    cfg = _axis_config()
+    lo = _axis_base(); lo.median_holding_s = 1800.0    # ≤ floor → 0
+    hi = _axis_base(); hi.median_holding_s = 86400.0   # ≥ target → 拉满 15
+    mid = _axis_base(); mid.median_holding_s = (1800.0 * 86400.0) ** 0.5  # 几何中点
+    s_lo = evaluate(lo, [], cfg, now=NOW).score
+    s_hi = evaluate(hi, [], cfg, now=NOW).score
+    s_mid = evaluate(mid, [], cfg, now=NOW).score
+    assert abs((s_hi - s_lo) - 15.0) < 0.15
+    # log10 插值：几何中点 ≈ 半程（7.5 分）
+    assert abs((s_mid - s_lo) - 7.5) < 0.2
+
+
+def test_extreme_axis_endpoint_weight_10():
+    cfg = _axis_config()
+    lo = _axis_base(); lo.buy_notional_extreme = lo.buy_notional_total * 0.50  # ≥ ceil → 0
+    hi = _axis_base(); hi.buy_notional_extreme = hi.buy_notional_total * 0.10  # ≤ floor → 10
+    d = evaluate(hi, [], cfg, now=NOW).score - evaluate(lo, [], cfg, now=NOW).score
+    assert abs(d - 10.0) < 0.15
+
+
+def test_consistency_axis_endpoint_weight_15():
+    cfg = _axis_config()
+    lo = _axis_base(); lo.sell_pnls = [80.0, 5.0, 5.0, 5.0, 5.0]   # top_win_share 0.8 → 0
+    hi = _axis_base(); hi.sell_pnls = [20.0, 20.0, 20.0, 20.0, 20.0]  # 0.2 → 拉满 15
+    d = evaluate(hi, [], cfg, now=NOW).score - evaluate(lo, [], cfg, now=NOW).score
+    assert abs(d - 15.0) < 0.15
+
+
+# ---- 打分 v2：速刷持仓时长闸（招聘 + 考核口径都生效）----
+
+def _tape_speed(wallet, markets, hold_s=1800, buy=0.40, sell=0.55, n_win=None, size=500):
+    """markets 个市场，每市场买后 hold_s 卖出；默认全赢。"""
+    now = NOW
+    n_win = markets if n_win is None else n_win
+    tape = []
+    for i in range(markets):
+        base = now - (markets - i) * 4 * DAY
+        sp = sell if i < n_win else buy - 0.10
+        tape.append(Trade(proxy_wallet=wallet, side="BUY", asset=f"t{i}", condition_id=f"0xc{i}",
+                          size=size, price=buy, timestamp=base, title="M", outcome="Yes",
+                          transaction_hash=f"0xb{i}"))
+        tape.append(Trade(proxy_wallet=wallet, side="SELL", asset=f"t{i}", condition_id=f"0xc{i}",
+                          size=size, price=sp, timestamp=base + hold_s, title="M", outcome="Yes",
+                          transaction_hash=f"0xs{i}"))
+    return tape
+
+
+def test_median_holding_gate_excludes_recruit_and_health():
+    """持仓中位 30 分钟（<1h）+ 配对卖出≥5 → 招聘与考核口径都排除。"""
+    wallet = "0x" + "5" * 40
+    # 12 市场、持仓 1800s、10 赢 2 亏（胜率 83%，避开结构性套利/高胜率闸的干扰）
+    tape = _tape_speed(wallet, 12, hold_s=1800, n_win=10)
+    stats = replay(wallet, tape)
+    assert stats.matched_sells == 12 and stats.median_holding_s == 1800.0
+    v = evaluate(stats, [], ScoutConfig(), now=stats.last_ts)
+    assert not v.eligible
+    assert any("延迟复制" in r for r in v.reasons)
+    # 考核口径不豁免此闸（evaluate_health 只覆盖死仓/盈亏/可判性三项）
+    h = evaluate_health(stats, [], tape, ScoutConfig(), now=stats.last_ts)
+    assert not h.eligible
+    assert any("延迟复制" in r for r in h.reasons)
+
+
+def test_median_holding_gate_needs_sample():
+    """配对卖出不足 min_quick_sample（5）时不触发，避免误杀小样本。"""
+    wallet = "0x" + "6" * 40
+    tape = _tape_speed(wallet, 4, hold_s=600, size=800)  # 4 笔快速卖出（<5）
+    stats = replay(wallet, tape)
+    assert stats.matched_sells == 4
+    v = evaluate(stats, [], ScoutConfig(min_trades=8), now=stats.last_ts)
+    assert not any("延迟复制" in r for r in v.reasons)
+
+
+# ---- 打分 v2：两个实证画像的分数对比（速刷户 vs 97.8h 长持户）----
+
+def _tape_long_hold(wallet):
+    """97.8h 长持、40 笔配对卖出、35 赢/5 亏（胜率 87.5%）、盈利分散、无极端价买入。"""
+    hold = int(97.8 * 3600)
+    tape = []
+    for i in range(40):
+        base = NOW - (40 - i) * 4 * DAY
+        win = i < 35
+        tape.append(Trade(proxy_wallet=wallet, side="BUY", asset=f"t{i}", condition_id=f"0xc{i}",
+                          size=200, price=0.40, timestamp=base, title="M", outcome="Yes",
+                          transaction_hash=f"0xb{i}"))
+        tape.append(Trade(proxy_wallet=wallet, side="SELL", asset=f"t{i}", condition_id=f"0xc{i}",
+                          size=200, price=(0.60 if win else 0.30), timestamp=base + hold,
+                          title="M", outcome="Yes", transaction_hash=f"0xs{i}"))
+    return tape
+
+
+def test_speedrunner_excluded_longhold_ranks_above():
+    long_w, speed_w = "0x" + "1" * 40, "0x" + "2" * 40
+    long_stats = replay(long_w, _tape_long_hold(long_w))
+    # 速刷户：19 笔、100% 胜率、持仓中位 0.5h（实证漏网画像）
+    speed_stats = replay(speed_w, _tape_speed(speed_w, 19, hold_s=1800, size=200))
+    assert speed_stats.matched_sells == 19 and speed_stats.win_rate == 1.0
+    assert speed_stats.median_holding_s == 1800.0
+
+    # 默认口径：速刷户被排除（持仓时长闸 + 结构性套利），长持户合格且高分
+    lv = evaluate(long_stats, [], ScoutConfig(), now=long_stats.last_ts)
+    sv = evaluate(speed_stats, [], ScoutConfig(), now=speed_stats.last_ts)
+    assert lv.eligible and lv.score > 90        # 实测 95.9
+    assert not sv.eligible
+    assert any("延迟复制" in r for r in sv.reasons)
+    assert any("结构性套利" in r for r in sv.reasons)
+
+    # 即便强行关掉排除，长持户分数仍明显高于速刷户（差距来自持仓时长轴）
+    lenient = ScoutConfig(min_median_holding_s=0.0, max_win_rate_sample=10**9,
+                          arb_min_sample=10**9)
+    ls = evaluate(long_stats, [], lenient, now=long_stats.last_ts).score
+    ss = evaluate(speed_stats, [], lenient, now=speed_stats.last_ts).score
+    assert ls > ss and (ls - ss) > 8            # 实测 95.9 vs 85.0

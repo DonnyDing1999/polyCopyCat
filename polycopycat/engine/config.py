@@ -147,6 +147,10 @@ class RiskConfig:
     """风控闸门。上限设为 null 表示不启用该项。"""
 
     max_market_exposure_usdc: float | None = 200.0
+    # 单目标单市场敞口上限：单个跟单目标在同一市场的净跟入成本上限（null=关）。
+    # 纸面实证：单个目标在同一市场连续加仓 5 笔把 77% 仓位压在一个市场——总/单市场敞口闸
+    # 都拦不住（额度够、市场不同目标共享），这条按「目标×市场」再切一刀，防单点押注。
+    max_market_exposure_per_target_usdc: float | None = None
     max_total_exposure_usdc: float | None = 1000.0
     daily_max_loss_usdc: float | None = 100.0
     market_blacklist: list[str] = field(default_factory=list)  # condition id 或 slug
@@ -155,6 +159,9 @@ class RiskConfig:
     def __post_init__(self) -> None:
         self.max_market_exposure_usdc = _positive(
             "risk.max_market_exposure_usdc", self.max_market_exposure_usdc)
+        self.max_market_exposure_per_target_usdc = _positive(
+            "risk.max_market_exposure_per_target_usdc",
+            self.max_market_exposure_per_target_usdc)
         self.max_total_exposure_usdc = _positive(
             "risk.max_total_exposure_usdc", self.max_total_exposure_usdc)
         self.daily_max_loss_usdc = _positive("risk.daily_max_loss_usdc", self.daily_max_loss_usdc)

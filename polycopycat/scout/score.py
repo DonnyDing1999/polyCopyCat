@@ -19,6 +19,36 @@ _DEAD_PRICE = 0.001
 _WON_PRICE = 0.999
 
 
+def wilson_lower_bound(wins: int, n: int, *, z: float = 1.96) -> float:
+    """胜率的 Wilson 得分区间下界（默认 z=1.96，即 95% 置信）。
+
+    比裸胜率稳健：样本越小，下界被往下压得越狠——自动惩罚「胜率高但笔数少」的
+    运气户（10 战全胜下界仅 ~0.72，100 战 90 胜能到 ~0.82）。n≤0 记 0。
+    """
+    if n <= 0:
+        return 0.0
+    phat = wins / n
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    centre = phat + z2 / (2 * n)
+    margin = z * math.sqrt((phat * (1.0 - phat) + z2 / (4 * n)) / n)
+    return (centre - margin) / denom
+
+
+def _clamp01(x: float) -> float:
+    return 0.0 if x < 0.0 else 1.0 if x > 1.0 else x
+
+
+def _holding_fraction(median_s: float, floor_s: float, target_s: float) -> float:
+    """持仓时长得分系数：≤floor 得 0，≥target 得 1，中间按 log10 线性插值。"""
+    if median_s <= floor_s:
+        return 0.0
+    if median_s >= target_s:
+        return 1.0
+    lo, hi = math.log10(floor_s), math.log10(target_s)
+    return (math.log10(median_s) - lo) / (hi - lo)
+
+
 @dataclass
 class ScoutConfig:
     min_trades: int = 20                  # 样本下限
@@ -32,7 +62,9 @@ class ScoutConfig:
     min_win_rate: float = 0.5             # 胜率下限
     min_win_sample: int = 10              # 胜率判定所需的最少配对卖出数
     max_win_rate: float = 0.95            # 胜率上限：大样本下高得离谱 = 结构性套利
-    max_win_rate_sample: int = 50         # 套利判定所需的最少配对卖出数
+    # 套利判定所需的最少配对卖出数。50→15：实证漏网户（100%×19 笔）恰卡在 50 以下全规则
+    # 通过；P(15/15 | 真实胜率 85%) ≈ 8.7%，作为保护资金的排除，这点误杀率可接受。
+    max_win_rate_sample: int = 15
     max_unrealized_drawdown_ratio: float = 0.5  # 持仓浮亏/成本 超过此比例 = 疑似死仓
     min_exposure_for_drawdown_usdc: float = 500.0  # 死仓判定所需的最小持仓成本
     # 可判性闸（只在招聘口径）：配对卖出少于此数，胜率/盈亏都无从谈起——纯买入或
@@ -45,11 +77,35 @@ class ScoutConfig:
     # 招聘版按盈亏/死仓完全看不穿，会给满分——专门一条规则筛掉。
     arb_min_win_rate: float = 0.9          # 胜率高于此才触发套利嫌疑判定
     arb_min_high_close_ratio: float = 0.85  # 卖出里贴近1.0平仓占比高于此
-    arb_min_sample: int = 20               # 套利指纹判定所需的最少配对卖出数
+    arb_min_sample: int = 10               # 套利指纹判定所需的最少配对卖出数（20→10，同步收紧）
     # 慢速做市/流动性提供：同一 token 反复双向成交、薄点差吃价差（快进快出抓不到的慢速版）
     max_churn_notional_ratio: float = 0.35  # 深度双向循环 token 成交额占比超此 = 做市嫌疑
     mm_thin_spread: float = 0.06            # 且双向点差薄于此（吃价差而非方向进出）
     mm_min_trades: int = 40                 # 做市判定所需的最少成交笔数（样本足才可信）
+    # 持仓中位时长闸：配对卖出≥min_quick_sample 且持仓中位低于此秒数 → 排除。方向无法
+    # 延迟复制（跟单必然接刀）。速刷户实证：100%×19 笔×中位 0.5h、100%×9 笔×0.9h——胜率闸
+    # 各样本口径都够呛卡得住，这条按持仓时长直接筛。复用 min_quick_sample 作样本下限
+    # （同属「快速交易」判定）。evaluate_health 不豁免此规则（在跟目标速刷化就该停）。
+    min_median_holding_s: float = 3600.0
+    # ---- 打分权重与端点（满分 100 = ROI 30 + Wilson 20 + 持仓 15 + 极端价 10 + 一致性 15 +
+    # 新鲜度 10；改权重时自行保证求和）。设计意图见 evaluate 打分段注释：奖励「可延迟复制的
+    # 判断」，不奖励「资金大/买热门/手速快」。所有阈值走字段、不在函数里写死魔法数。----
+    score_roi_weight: float = 30.0
+    score_roi_target: float = 0.10          # 窗口 ROI（realized_pnl / 总成交额）达此拉满
+    score_wilson_weight: float = 20.0
+    score_wilson_floor: float = 0.5         # Wilson 胜率下界 0.5 起步
+    score_wilson_target: float = 0.8        # 0.8 拉满
+    score_holding_weight: float = 15.0
+    score_holding_floor_s: float = 1800.0   # 持仓中位 ≤ 此得 0
+    score_holding_target_s: float = 86400.0  # ≥ 此拉满（中间按 log10 插值）
+    score_extreme_weight: float = 10.0
+    score_extreme_floor: float = 0.10       # 极端价买入占比 ≤ 此拉满
+    score_extreme_ceil: float = 0.50        # ≥ 此得 0
+    score_consistency_weight: float = 15.0
+    score_consistency_floor: float = 0.20   # top_win_share ≤ 此拉满（盈利分散）
+    score_consistency_ceil: float = 0.80    # ≥ 此得 0（一把梭）
+    score_recency_weight: float = 10.0
+    score_recency_window_h: float = 168.0   # 新鲜度线性衰减窗口（小时）
     quick_window_s: float = DEFAULT_QUICK_WINDOW_S
     request_delay_s: float = 0.15         # 逐地址评估时的限速间隔
 
@@ -183,6 +239,14 @@ def evaluate(
             f"疑似做市/套利（{config.quick_window_s / 60:.0f} 分钟内快进快出占比 "
             f"{stats.quick_flip_ratio:.0%}）"
         )
+    if (
+        stats.matched_sells >= config.min_quick_sample
+        and stats.median_holding_s < config.min_median_holding_s
+    ):
+        reasons.append(
+            f"持仓中位仅 {stats.median_holding_s / 60:.0f} 分钟，"
+            "方向无法延迟复制（速刷/做市）"
+        )
     spread = stats.median_two_side_spread
     if (
         stats.n_trades >= config.mm_min_trades
@@ -246,17 +310,37 @@ def evaluate(
             stats=stats, exposure_usdc=exposure, unrealized_pnl=unrealized,
         )
 
-    # 打分（满分 100）：盈利 40 + 胜率 25 + 市场广度 15 + 活跃度 10 + 单笔规模 10
-    pnl_score = 40.0 * min(1.0, math.log10(1.0 + max(0.0, stats.realized_pnl)) / 4.0)
-    if win_rate is None:
-        win_score = 10.0  # 纯买入持有，胜率未知给中性偏低
-    else:
-        win_score = 25.0 * win_rate
-    breadth_score = 15.0 * min(1.0, stats.n_markets / 10.0)
-    hours_idle = (now - stats.last_ts) / 3600 if stats.last_ts else 168.0
-    recency_score = 10.0 * max(0.0, 1.0 - hours_idle / 168.0)
-    size_score = 10.0 * min(1.0, stats.avg_trade_usdc / 500.0)
-    score = pnl_score + win_score + breadth_score + recency_score + size_score
+    # 打分（满分 100）= ROI 30 + Wilson胜率 20 + 可跟性 25（持仓 15 + 极端价 10）
+    #   + 一致性 15 + 新鲜度 10。刻意奖励「可延迟复制的判断」而非「资金大/买热门/手速快」：
+    #   绝对盈亏→ROI、裸胜率→Wilson 下界，新增持仓时长/极端价位/盈利集中度三轴，并删掉规模分。
+    # 到这里必有配对卖出——招聘口径 min_judgeable_sells≥3 的可判性闸已挡掉纯买入/撒币户；
+    # 考核口径 evaluate_health 关掉该闸，纯买入目标在依赖卖出的三轴（ROI/Wilson/一致性）自然
+    # 得 0（考核只判 eligible、不按分排序，得 0 无碍），故不再保留 win_rate is None 的兼容分支。
+    roi = stats.realized_pnl / stats.notional if stats.notional > 0 else 0.0
+    roi_score = config.score_roi_weight * _clamp01(roi / config.score_roi_target)
+    win_score = config.score_wilson_weight * _clamp01(
+        (wilson_lower_bound(stats.wins, stats.matched_sells) - config.score_wilson_floor)
+        / (config.score_wilson_target - config.score_wilson_floor)
+    )
+    holding_score = config.score_holding_weight * _holding_fraction(
+        stats.median_holding_s, config.score_holding_floor_s, config.score_holding_target_s
+    )
+    extreme_score = config.score_extreme_weight * _clamp01(
+        (config.score_extreme_ceil - stats.extreme_price_buy_ratio)
+        / (config.score_extreme_ceil - config.score_extreme_floor)
+    )
+    consistency_score = config.score_consistency_weight * _clamp01(
+        (config.score_consistency_ceil - stats.top_win_share)
+        / (config.score_consistency_ceil - config.score_consistency_floor)
+    )
+    hours_idle = (now - stats.last_ts) / 3600 if stats.last_ts else config.score_recency_window_h
+    recency_score = config.score_recency_weight * max(
+        0.0, 1.0 - hours_idle / config.score_recency_window_h
+    )
+    score = (
+        roi_score + win_score + holding_score
+        + extreme_score + consistency_score + recency_score
+    )
     return Verdict(
         address=stats.address, eligible=True, score=round(score, 1),
         stats=stats, exposure_usdc=exposure, unrealized_pnl=unrealized,
