@@ -361,7 +361,7 @@ polycopycat/
 ├── models.py         # Trade / Position 数据模型（宽容解析）
 ├── watcher.py        # 轮询监控：增量去重、基线、ingest/request_poll
 ├── stream.py         # 实时成交推送：订阅、保活、指数退避重连、on_gap
-├── _http.py          # 带重试的 HTTP GET（429/5xx 指数退避）
+├── _http.py          # 带重试的 HTTP GET（403/429/5xx 指数退避；403 见 CLOB 间歇 WAF 实测）
 ├── engine/           # 跟单引擎
 │   ├── engine.py     #   主体：信号队列 → 过滤 → 计算 → 风控 → 执行 → 记账；对账线程
 │   ├── config.py     #   copycat.json 解析与校验

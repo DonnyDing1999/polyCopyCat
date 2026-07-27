@@ -10,7 +10,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+# 403 也重试：2026-07-27 实测 CLOB 对同一市场的请求间歇性返回 403（WAF/限流抖动，
+# 稍后即恢复），一天错失 44 条信号。真被封禁的场景重试三次即快速失败，代价可控。
+RETRYABLE_STATUS = {403, 429, 500, 502, 503, 504}
 
 
 class HttpError(RuntimeError):

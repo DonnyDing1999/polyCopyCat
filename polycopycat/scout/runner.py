@@ -45,7 +45,10 @@ def candidates_from_leaderboard(
     base = (base_url or os.environ.get(ENV_LB_URL) or DEFAULT_LB_URL).rstrip("/")
     if session is None:
         session = requests.Session()
-        session.headers.update({"Accept": "application/json"})
+        session.headers.update({
+            "Accept": "application/json",
+            "User-Agent": "polyCopyCat (+https://github.com/DonnyDing1999/polyCopyCat)",
+        })
     try:
         data = get_json(
             session, f"{base}/leaderboard",

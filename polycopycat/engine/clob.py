@@ -136,7 +136,12 @@ class ClobReadClient:
         ).rstrip("/")
         if session is None:
             session = requests.Session()
-            session.headers.update({"Accept": "application/json"})
+            session.headers.update({
+                "Accept": "application/json",
+                # 与 data_api 一致的诚实 UA：requests 默认 UA 最容易被 WAF 误伤
+                # （2026-07-27 实测 CLOB 间歇 403）
+                "User-Agent": "polyCopyCat (+https://github.com/DonnyDing1999/polyCopyCat)",
+            })
         self._session = session
         self.timeout = timeout
         self.max_retries = max_retries
