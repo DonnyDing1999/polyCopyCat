@@ -242,6 +242,10 @@ class HealthConfig:
     recruit_ratio: float = 0.05           # 招募目标的跟单比例（比常规目标保守）
     recruit_max_per_trade_usdc: float = 25.0  # 招募目标的单笔上限
     recruit_max_targets: int = 15         # 目标总数上限（配置 + 招募），防无限膨胀
+    # 招募分数门槛：名录里合格者的分数中位数只有 45 上下、前 10% 才 68，
+    # 不设门槛等于把一大批擦线合格的也招进来。0 视为不设门槛。
+    recruit_min_score: float = 70.0
+    recruit_max_per_round: int = 3        # 每轮（每小时摘要点）最多招几个；≤0 不限
     # 永不招募的地址：scout 打分看不出问题、但人工判定不该跟的（如只做当日盘、
     # 信号必然过期）。启动时也会把已在招募档案里的黑名单地址剔出去。
     recruit_blocklist: list[str] = field(default_factory=list)
@@ -289,6 +293,20 @@ class HealthConfig:
             "health.recruit_max_per_trade_usdc", self.recruit_max_per_trade_usdc, allow_none=False
         )
         self.recruit_max_targets = max(1, int(self.recruit_max_targets))
+        # 门槛允许 0（不设门槛），故不用 _positive；负数按 0 收敛
+        try:
+            self.recruit_min_score = max(0.0, float(self.recruit_min_score))
+        except (TypeError, ValueError):
+            raise ConfigError(
+                f"health.recruit_min_score 应为数字，实际是 {self.recruit_min_score!r}"
+            ) from None
+        # ≤0 表示每轮不限量，故不用 max(1, ...) 夹
+        try:
+            self.recruit_max_per_round = int(self.recruit_max_per_round)
+        except (TypeError, ValueError):
+            raise ConfigError(
+                f"health.recruit_max_per_round 应为整数，实际是 {self.recruit_max_per_round!r}"
+            ) from None
         if isinstance(self.recruit_blocklist, str):
             raise ConfigError("health.recruit_blocklist 应为地址数组，不是字符串")
         self.recruit_blocklist = [normalize_address(a) for a in (self.recruit_blocklist or [])]

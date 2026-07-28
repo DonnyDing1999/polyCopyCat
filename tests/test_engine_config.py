@@ -80,6 +80,20 @@ def test_recruit_blocklist_rejects_bare_string():
         EngineConfig.from_dict(minimal(health={"recruit_blocklist": ADDR}))
 
 
+def test_recruit_gates_defaults_and_validation():
+    health = EngineConfig.from_dict(minimal()).health
+    assert health.recruit_min_score == 70.0 and health.recruit_max_per_round == 3
+    # ≤0 各有含义：门槛 0 = 不设门槛，每轮上限 ≤0 = 不限量，都不该被夹成正数
+    health = EngineConfig.from_dict(
+        minimal(health={"recruit_min_score": 0, "recruit_max_per_round": -1})
+    ).health
+    assert health.recruit_min_score == 0.0 and health.recruit_max_per_round == -1
+    with pytest.raises(ConfigError, match="recruit_min_score"):
+        EngineConfig.from_dict(minimal(health={"recruit_min_score": "高一点"}))
+    with pytest.raises(ConfigError, match="recruit_max_per_round"):
+        EngineConfig.from_dict(minimal(health={"recruit_max_per_round": None}))
+
+
 def test_unknown_keys_only_warn(tmp_path):
     path = tmp_path / "ok.json"
     path.write_text(json.dumps(minimal(unknown_top=1, risk={"whatever": 2})), encoding="utf-8")

@@ -46,6 +46,27 @@ def _recruited_path(config: EngineConfig) -> Path:
     return Path(config.ledger_path).parent / "recruited.json"
 
 
+@dataclasses.dataclass(frozen=True)
+class _RosterCandidate:
+    """名录条目（Verdict.to_dict() + evaluated_at 的 dict）→ 招募候选。
+
+    只取 _recruit 用到的两个字段，好让招募既能吃 Verdict 也能吃名录 dict，
+    而不必改 Verdict 类或名录的返回结构。老行缺 score 时兜 0：自然被分数
+    门槛挡下，不会因为字段残缺被误招。
+    """
+
+    address: str
+    score: float
+
+    @classmethod
+    def from_entry(cls, entry: dict) -> "_RosterCandidate":
+        try:
+            score = float(entry.get("score") or 0.0)
+        except (TypeError, ValueError):
+            score = 0.0
+        return cls(address=str(entry.get("address") or "").lower(), score=score)
+
+
 def merge_recruited_targets(config: EngineConfig) -> list[str]:
     """启动时把历史自动招募的目标（recruited.json）并回 targets。
 
@@ -979,13 +1000,21 @@ class CopyEngine:
         return len(due)
 
     def _maybe_discover_summary(self, now: float) -> None:
-        """每小时最多一条摘要 + 招募当小时新合格者；滚动名录随之刷新。"""
+        """每小时最多一条摘要 + 从名录择优招募；滚动名录随之刷新。
+
+        通知和招募的取数源是两回事，故此处解耦：通知播报「这小时新发现了谁」
+        （当小时新合格者），招募则从全量名录挑最好的。只看当小时新面孔会漏掉
+        上小时评出的高分候选、却招走这小时碰巧评出的擦线者——名录里躺着历次
+        评估攒下的全部合格者，按分数择优才是保守口径。
+        """
         if now - self._last_discover_notify < 3600:
             return
         self._last_discover_notify = now
         new = sorted(self._discover_new_eligible.values(), key=lambda v: -v.score)
         self._discover_new_eligible.clear()
-        recruited = self._recruit(new)          # 招募时机改到摘要点，用当小时新合格者
+        # 名录已按 last_score 降序并排除在跟目标；转成轻量候选对象喂给 _recruit
+        roster = self._ledger.discover_universe_roster(exclude=set(self._targets))
+        recruited = self._recruit([_RosterCandidate.from_entry(e) for e in roster])
         self._write_discover_roster(now)        # 再写名录：自动排除刚招募进池的地址
         fresh = self._dedup_notify(new, now)    # 同一地址 7 天内不重复上榜通知
         if fresh or recruited:
@@ -1018,9 +1047,13 @@ class CopyEngine:
         return fresh
 
     def _discover_summary_text(self, fresh, recruited) -> str:
-        lines = [
-            f"🔭 候选发现摘要：新合格 {len(fresh)} 个面孔（票池涓流评估，均不在跟单名单）。Top："
-        ]
+        # 招募源解耦后，「这小时没有新面孔、但从名录招到了人」是常态，
+        # 此时不摆一个空的「Top：」清单头
+        lines = (
+            [f"🔭 候选发现摘要：新合格 {len(fresh)} 个面孔（票池涓流评估，均不在跟单名单）。Top："]
+            if fresh
+            else ["🔭 候选发现摘要：本小时无新合格面孔（名录存量见下）。"]
+        )
         for v in fresh[:5]:
             s = v.stats
             if s:
@@ -1063,10 +1096,11 @@ class CopyEngine:
         tmp.replace(out_path)
 
     def _recruit(self, eligible) -> list[str]:
-        """把合格新面孔自动加入跟单（仅纸面模式），并持久化到招募档案。
+        """把合格候选自动加入跟单（仅纸面模式），并持久化到招募档案。
 
-        watcher/stream 通过 on_new_target 回调开始盯新地址（老成交走基线
-        机制不会刷成新信号）；镜像由下一轮对账补快照。
+        eligible 是按分数降序的候选序列，元素只需有 .address / .score
+        （Verdict 或 _RosterCandidate 都行）。watcher/stream 通过 on_new_target
+        回调开始盯新地址（老成交走基线机制不会刷成新信号）；镜像由下一轮对账补快照。
         """
         health = self.config.health
         if not eligible or not health.auto_recruit:
@@ -1076,12 +1110,23 @@ class CopyEngine:
             return []
         blocked = set(health.recruit_blocklist)
         recruited: list[str] = []
-        for verdict in eligible:  # scout 已按分数降序
+        for verdict in eligible:  # 已按分数降序
             if len(self._targets) >= health.recruit_max_targets:
                 logger.info("目标总数已达上限 %d，本轮不再招募", health.recruit_max_targets)
                 break
+            # 每轮限量：名额一次性灌满就没法分批看表现了，剩下的留到下一轮
+            if 0 < health.recruit_max_per_round <= len(recruited):
+                logger.info("本轮已招满 %d 个，其余候选留到下一轮", health.recruit_max_per_round)
+                break
             if verdict.address in blocked:
                 logger.info("候选 %s 在黑名单，跳过招募", _short(verdict.address))
+                continue
+            # 分数门槛：合格只是及格线，擦线者不值得占一个名额
+            if verdict.score < health.recruit_min_score:
+                logger.debug(
+                    "候选 %s 分%.1f 低于招募门槛 %.1f，跳过",
+                    _short(verdict.address), verdict.score, health.recruit_min_score,
+                )
                 continue
             target = TargetConfig(
                 address=verdict.address,

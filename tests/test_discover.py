@@ -612,12 +612,31 @@ def test_universe_flush_cadence_independent_of_daily_refresh(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 16) 招募路径（_recruit 经每小时摘要点触发；直接塞 Verdict 进本小时新合格集合驱动）
+# 16) 招募路径（_recruit 经每小时摘要点触发；招募取数源是名录，不是当小时新面孔）
 # ---------------------------------------------------------------------------
 
-def _drive_summary(engine, eligible, *, now=None):
-    """把合格者塞进本小时新合格集合、拨旧摘要计时，触发一次摘要点（内含招募）。"""
+def _addr(i):
+    return f"0x{i:040x}"
+
+
+def _seed_roster(engine, verdicts):
+    """把候选灌进票池并标记为合格 —— 这才是招募的取数源。"""
+    led = engine._ledger
+    led.discover_universe_upsert([{"wallet": v.address, "source": "s"} for v in verdicts])
+    for v in verdicts:
+        led.discover_universe_record_eval(
+            v.address, score=v.score, eligible=True, verdict=v.to_dict()
+        )
+
+
+def _drive_summary(engine, eligible, *, now=None, roster=None):
+    """拨旧摘要计时并触发一次摘要点（内含招募）。
+
+    eligible = 当小时新合格者（只进通知）；roster = 名录里的合格候选（招募取数源），
+    默认与 eligible 同一批，好让只关心招募行为的用例照旧只传一份。
+    """
     now = time.time() if now is None else now
+    _seed_roster(engine, eligible if roster is None else roster)
     engine._discover_new_eligible = {v.address: v for v in eligible}
     engine._last_discover_notify = now - 3601
     engine._maybe_discover_summary(now)
@@ -676,3 +695,100 @@ def test_recruit_recorded_as_event(tmp_path):
     _drive_summary(engine, [_verdict(GOOD, 80)])
     summary = led.target_event_summary()
     assert summary[GOOD]["recruits"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 17) 招募取数源 = 名录择优（与「当小时新面孔」解耦）+ 分数门槛 + 每轮限量
+# ---------------------------------------------------------------------------
+
+def test_recruit_from_roster_when_no_new_faces_this_hour(tmp_path):
+    # 上小时评出的高分候选躺在名录里，这小时一个新面孔都没有 → 照样该招
+    engine, _, _ = make_engine(FakeData(), tmp_path=tmp_path, auto_recruit=True)
+    _drive_summary(engine, [], roster=[_verdict(GOOD, 86)])
+    assert GOOD in engine._targets
+    entries = json.loads((tmp_path / "recruited.json").read_text())
+    assert [e["address"] for e in entries] == [GOOD]
+
+
+def test_recruit_prefers_roster_high_score_over_this_hour_face(tmp_path):
+    # 名录里有上小时评出的 86 分，这小时新评出的只有 45 分；每轮只招 1 个 →
+    # 该招名录里的高分那个（旧口径会招走这小时碰巧评出的 45 分）
+    engine, _, _ = make_engine(
+        FakeData(), tmp_path=tmp_path, auto_recruit=True,
+        recruit_min_score=0, recruit_max_per_round=1,
+    )
+    low = _verdict(W1, 45)
+    _drive_summary(engine, [low], roster=[_verdict(GOOD, 86), low])
+    assert GOOD in engine._targets
+    assert W1 not in engine._targets
+
+
+@pytest.mark.parametrize("score, recruited", [(69.9, False), (70.0, True)])
+def test_recruit_min_score_gate(tmp_path, score, recruited):
+    engine, _, _ = make_engine(
+        FakeData(), tmp_path=tmp_path, auto_recruit=True, recruit_min_score=70.0,
+    )
+    _drive_summary(engine, [_verdict(GOOD, score)])
+    assert (GOOD in engine._targets) is recruited
+    assert (tmp_path / "recruited.json").exists() is recruited
+
+
+def test_recruit_max_per_round_spreads_across_rounds(tmp_path):
+    # 名录里 10 个够格的，本轮只招前 3 名（分数降序），其余留到下一轮
+    engine, _, _ = make_engine(
+        FakeData(), tmp_path=tmp_path, auto_recruit=True,
+        recruit_max_per_round=3, recruit_max_targets=99,
+    )
+    pool = [_verdict(_addr(i + 1), 90 - i) for i in range(10)]
+    _drive_summary(engine, [], roster=pool)
+    got = set(engine._targets) - {TRACKED}
+    assert got == {v.address for v in pool[:3]}      # 高分优先
+
+    # 下一轮：名录仍在库里（已招的被在跟名单排除），继续往下招 3 个
+    _drive_summary(engine, [])
+    got2 = set(engine._targets) - {TRACKED}
+    assert len(got2) == 6
+    assert got2 == {v.address for v in pool[:6]}
+
+
+def test_recruit_no_per_round_cap_when_non_positive(tmp_path):
+    # ≤0 视为不限量：名录里 5 个够格的一轮全招
+    engine, _, _ = make_engine(
+        FakeData(), tmp_path=tmp_path, auto_recruit=True,
+        recruit_max_per_round=0, recruit_max_targets=99,
+    )
+    pool = [_verdict(_addr(i + 1), 90 - i) for i in range(5)]
+    _drive_summary(engine, [], roster=pool)
+    assert set(engine._targets) - {TRACKED} == {v.address for v in pool}
+
+
+def test_recruit_skips_already_tracked_and_never_repeats(tmp_path):
+    # 在跟目标即便在票池里合格，名录侧就被排除，不会被重复招
+    engine, _, _ = make_engine(
+        FakeData(), targets=(TRACKED,), tmp_path=tmp_path, auto_recruit=True,
+    )
+    _drive_summary(engine, [], roster=[_verdict(TRACKED, 95), _verdict(GOOD, 80)])
+    assert set(engine._targets) == {TRACKED, GOOD}
+    entries = json.loads((tmp_path / "recruited.json").read_text())
+    assert [e["address"] for e in entries] == [GOOD]
+
+    # 再来一轮：GOOD 已在跟 → 名录排除它，档案不会多出重复条目
+    _drive_summary(engine, [])
+    assert set(engine._targets) == {TRACKED, GOOD}
+    entries = json.loads((tmp_path / "recruited.json").read_text())
+    assert [e["address"] for e in entries] == [GOOD]
+
+
+def test_summary_reports_new_faces_while_recruiting_from_roster(tmp_path):
+    # 通知内容与招募取数源解耦：播报的仍是当小时新面孔，招的是名录里的高分
+    engine, notifier, _ = make_engine(
+        FakeData(), tmp_path=tmp_path, auto_recruit=True,
+        recruit_min_score=0, recruit_max_per_round=1,
+    )
+    fresh = _verdict(W1, 45)
+    _drive_summary(engine, [fresh], roster=[_verdict(GOOD, 86), fresh])
+    msg = _summaries(notifier)[0]
+    assert "新合格 1 个面孔" in msg
+    assert _short(W1) in msg                                        # 通知：当小时新面孔
+    assert f"自动加入纸面跟单 1 个：{_short(GOOD)}" in msg           # 招募：名录高分
+    assert _short(GOOD) not in msg.split("🤝")[0]                   # 高分不混进新面孔榜
