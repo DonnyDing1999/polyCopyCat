@@ -82,19 +82,19 @@ class FakeDataClient:
         return self.positions.get(user.lower(), [])
 
 
-def make_trade(wallet, side, size, price, ts, asset="tok1"):
+def make_trade(wallet, side, size, price, ts, asset="tok1", title=""):
     return Trade(proxy_wallet=wallet, side=side, asset=asset,
                  condition_id=f"0xc-{asset}", size=size, price=price,
-                 timestamp=ts, transaction_hash=f"0x{wallet[-4:]}{ts}")
+                 timestamp=ts, title=title, transaction_hash=f"0x{wallet[-4:]}{ts}")
 
 
-def winner_tape(wallet):
+def winner_tape(wallet, title=""):
     tape = []
     for i in range(12):
         base = NOW - (12 - i) * DAY
-        tape.append(make_trade(wallet, "BUY", 500, 0.40, base, asset=f"tok{i}"))
+        tape.append(make_trade(wallet, "BUY", 500, 0.40, base, asset=f"tok{i}", title=title))
         tape.append(make_trade(wallet, "SELL", 500, 0.55, min(base + DAY, NOW - 3600),
-                               asset=f"tok{i}"))
+                               asset=f"tok{i}", title=title))
     return tape
 
 
@@ -135,3 +135,17 @@ def test_targets_snippet_only_eligible_top_n():
     parsed = json.loads(snippet)
     assert parsed["targets"][0]["address"] == A1
     assert parsed["targets"][0]["ratio"] == 0.1
+
+
+def test_scout_addresses_applies_unfollowable_precheck():
+    """占比在 scout_addresses 里算好挂到 stats 上（replay 本身不认识 patterns）。"""
+    client = FakeDataClient(tapes={A1: winner_tape(A1, title="Alcaraz vs Sinner")})
+    config = ScoutConfig(request_delay_s=0.0, unfollowable_title_patterns=["vs "])
+    verdict = scout_addresses(client, [A1], config=config, now=NOW)[0]
+    assert verdict.stats.unfollowable_buy_ratio == 1.0
+    assert not verdict.eligible
+    assert any("可跟信号不足" in r for r in verdict.reasons)
+
+    # 同一条成交带，不配 patterns → 照常合格且占比记 0（对照）
+    plain = scout_addresses(client, [A1], config=ScoutConfig(request_delay_s=0.0), now=NOW)[0]
+    assert plain.eligible and plain.stats.unfollowable_buy_ratio == 0.0

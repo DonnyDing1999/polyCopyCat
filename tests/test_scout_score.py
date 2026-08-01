@@ -573,3 +573,47 @@ def test_speedrunner_excluded_longhold_ranks_above():
     ls = evaluate(long_stats, [], lenient, now=long_stats.last_ts).score
     ss = evaluate(speed_stats, [], lenient, now=speed_stats.last_ts).score
     assert ls > ss and (ls - ss) > 8            # 实测 95.9 vs 85.0
+
+
+# ---- 可跟性预检（只在发现/招聘口径）----
+
+def _followability_config(**kw):
+    return ScoutConfig(unfollowable_title_patterns=["vs "], **kw)
+
+
+def test_unfollowable_gate_boundary_at_default_threshold():
+    """0.7 是「允许一半比赛盘一半长线的人进来」的分界：恰好 0.70 放行，0.71 排除。"""
+    stats = replay(ADDR, tape_winner())
+    stats.unfollowable_buy_ratio = 0.70
+    assert evaluate(stats, [], _followability_config(), now=NOW).eligible
+
+    stats.unfollowable_buy_ratio = 0.71
+    verdict = evaluate(stats, [], _followability_config(), now=NOW)
+    assert not verdict.eligible
+    assert any("可跟信号不足" in r for r in verdict.reasons)
+
+
+def test_unfollowable_gate_off_without_patterns():
+    """没配 patterns（默认）= 闸关闭：占比再高也不排除。"""
+    stats = replay(ADDR, tape_winner())
+    stats.unfollowable_buy_ratio = 1.0
+    assert evaluate(stats, [], ScoutConfig(), now=NOW).eligible
+
+
+def test_unfollowable_gate_threshold_configurable():
+    stats = replay(ADDR, tape_winner())
+    stats.unfollowable_buy_ratio = 0.4
+    assert evaluate(stats, [], _followability_config(), now=NOW).eligible
+    assert not evaluate(
+        stats, [], _followability_config(max_unfollowable_ratio=0.3), now=NOW
+    ).eligible
+
+
+def test_unfollowable_gate_not_applied_to_health():
+    """考核口径不用这条：入口闸归入口，在跟目标的实际跟单率由零跟单率解聘管。"""
+    tape = tape_winner()
+    stats = replay(ADDR, tape)
+    stats.unfollowable_buy_ratio = 1.0
+    config = _followability_config()
+    assert not evaluate(stats, [], config, now=NOW).eligible
+    assert evaluate_health(stats, [], tape, config, now=NOW).eligible

@@ -98,7 +98,7 @@ def _fire(wallet, n):
     ]
 
 
-def elig_tape(wallet, markets=12):
+def elig_tape(wallet, markets=12, title="M"):
     """一条能过 scout 招聘全部规则的成交带（含配对卖出、近期活跃、非做市）。
 
     持仓 2h：需高于 min_median_holding_s（1h）的速刷/做市持仓时长闸，否则会被排除。
@@ -109,10 +109,10 @@ def elig_tape(wallet, markets=12):
         base = now - (markets - i) * 3600 - 7200
         tape.append(Trade(proxy_wallet=wallet, side="BUY", asset=f"tk{i}",
                           condition_id=f"0xc{i}", size=500, price=0.40, timestamp=base,
-                          title="M", outcome="Yes", transaction_hash=f"0x{wallet[-3:]}b{i}"))
+                          title=title, outcome="Yes", transaction_hash=f"0x{wallet[-3:]}b{i}"))
         tape.append(Trade(proxy_wallet=wallet, side="SELL", asset=f"tk{i}",
                           condition_id=f"0xc{i}", size=500, price=0.55, timestamp=base + 7200,
-                          title="M", outcome="Yes", transaction_hash=f"0x{wallet[-3:]}s{i}"))
+                          title=title, outcome="Yes", transaction_hash=f"0x{wallet[-3:]}s{i}"))
     return tape
 
 
@@ -130,12 +130,13 @@ def _row(led, wallet):
     ).fetchone()
 
 
-def make_engine(data, *, tmp_path, targets=(TRACKED,), mode="paper", **health):
+def make_engine(data, *, tmp_path, targets=(TRACKED,), mode="paper", filters=None, **health):
     config = EngineConfig.from_dict({
         "mode": mode,
         "targets": [{"address": a} for a in targets],
         "risk": {"kill_switch_file": ""},
         "aggregate": {"window_s": 0},
+        "filters": filters or {},
         "health": {"discover_interval_s": 86400, **health},
     })
     config.ledger_path = str(tmp_path / "copycat.sqlite3")
@@ -777,6 +778,59 @@ def test_recruit_skips_already_tracked_and_never_repeats(tmp_path):
     assert set(engine._targets) == {TRACKED, GOOD}
     entries = json.loads((tmp_path / "recruited.json").read_text())
     assert [e["address"] for e in entries] == [GOOD]
+
+
+# ---------------------------------------------------------------------------
+# 18) 解聘冷却：刚被零跟单率解聘的人不许下一轮原地招回来
+# ---------------------------------------------------------------------------
+
+def test_recruit_skips_dismissed_within_cooldown(tmp_path):
+    # 被解聘的人战绩没变、分数照样高，还躺在名录里——不挡就会立刻回招
+    engine, _, led = make_engine(FakeData(), tmp_path=tmp_path, auto_recruit=True)
+    now = time.time()
+    led.set_state("recruit_dismissed", json.dumps({GOOD: now - 3 * 86400}))
+    _drive_summary(engine, [_verdict(GOOD, 90)], now=now)
+    assert GOOD not in engine._targets
+    assert not (tmp_path / "recruited.json").exists()
+
+
+def test_recruit_allowed_after_cooldown_expires(tmp_path):
+    # 冷却过后允许再试（人会变，可跟性预检也会在入口再拦一次）
+    engine, _, led = make_engine(
+        FakeData(), tmp_path=tmp_path, auto_recruit=True, recruit_dismiss_cooldown_days=14,
+    )
+    now = time.time()
+    led.set_state("recruit_dismissed", json.dumps({GOOD: now - 15 * 86400}))
+    _drive_summary(engine, [_verdict(GOOD, 90)], now=now)
+    assert GOOD in engine._targets
+    assert json.loads(led.get_state("recruit_dismissed")) == {}  # 过期项读写时顺手清掉
+
+
+# ---------------------------------------------------------------------------
+# 19) 可跟性预检接线：发现口径吃引擎的 skip_title_patterns
+# ---------------------------------------------------------------------------
+
+def test_trickle_feeds_skip_title_patterns_into_scout(tmp_path):
+    # 战绩完全合格、但全在比赛盘上交易的候选：配了过滤器就该被挡在门外
+    tape = elig_tape(GOOD, title="Alcaraz vs Sinner - Wimbledon Final")
+    data = FakeData(firehose=_fire(GOOD, 3), tapes={GOOD: tape})
+    engine, _, led = make_engine(
+        data, tmp_path=tmp_path, discover_eval_per_min=2,
+        filters={"skip_title_patterns": ["vs "]},
+    )
+    engine._discover_tick()
+    row = _row(led, GOOD)
+    assert row["last_eligible"] == 0
+    assert "可跟信号不足" in row["last_verdict"]
+
+
+def test_trickle_without_skip_patterns_keeps_candidate(tmp_path):
+    # 对照组：同一条成交带，没配过滤器就照常合格（证明是接线灌进去的，不是别的规则）
+    tape = elig_tape(GOOD, title="Alcaraz vs Sinner - Wimbledon Final")
+    data = FakeData(firehose=_fire(GOOD, 3), tapes={GOOD: tape})
+    engine, _, led = make_engine(data, tmp_path=tmp_path, discover_eval_per_min=2)
+    engine._discover_tick()
+    assert _row(led, GOOD)["last_eligible"] == 1
 
 
 def test_summary_reports_new_faces_while_recruiting_from_roster(tmp_path):

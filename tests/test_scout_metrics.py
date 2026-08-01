@@ -1,15 +1,15 @@
 from polycopycat.models import Trade
-from polycopycat.scout.metrics import replay
+from polycopycat.scout.metrics import compute_unfollowable_buy_ratio, replay
 
 ADDR = "0x" + "a" * 40
 DAY = 86400
 
 
-def trade(side, size, price, ts, asset="tok1", cond=None):
+def trade(side, size, price, ts, asset="tok1", cond=None, title=""):
     return Trade(
         proxy_wallet=ADDR, side=side, asset=asset,
         condition_id=cond or f"0xc-{asset}", size=size, price=price,
-        timestamp=ts, transaction_hash=f"0x{ts}",
+        timestamp=ts, title=title, transaction_hash=f"0x{ts}",
     )
 
 
@@ -152,3 +152,32 @@ def test_extreme_price_low_end_counted():
     ]
     stats = replay(ADDR, tape)
     assert abs(stats.extreme_price_buy_ratio - 0.5) < 1e-9
+
+
+# ---- 可跟性预检：买入成交额里落在「引擎会过滤掉的品类」的占比 ----
+
+def test_unfollowable_ratio_weighted_by_notional():
+    """按成交额加权而非笔数：一笔大额比赛盘能把占比顶上去。"""
+    tape = [
+        trade("BUY", 1000, 0.50, 1000, asset="t1", title="Alcaraz vs Sinner"),  # $500 命中
+        trade("BUY", 100, 0.50, 1100, asset="t2", title="US election 2028"),    # $50 不命中
+    ]
+    ratio = compute_unfollowable_buy_ratio(tape, ["vs "])
+    assert abs(ratio - 500.0 / 550.0) < 1e-9   # 按笔数会算成 0.5，明确不是那样
+
+
+def test_unfollowable_ratio_ignores_sells_and_is_case_insensitive():
+    tape = [
+        trade("BUY", 100, 0.50, 1000, asset="t1", title="Nadal VS Federer"),
+        trade("BUY", 100, 0.50, 1100, asset="t2", title="Fed rate cut in March?"),
+        # 卖出不进分母：预检衡量的是「他开的仓我们跟不跟得了」
+        trade("SELL", 100, 0.90, 1200, asset="t2", title="Fed rate cut in March?"),
+    ]
+    assert abs(compute_unfollowable_buy_ratio(tape, ["Vs "]) - 0.5) < 1e-9
+
+
+def test_unfollowable_ratio_zero_without_patterns():
+    tape = [trade("BUY", 100, 0.50, 1000, title="Alcaraz vs Sinner")]
+    assert compute_unfollowable_buy_ratio(tape, []) == 0.0
+    assert compute_unfollowable_buy_ratio(tape, ["  "]) == 0.0   # 全是空串等于没配
+    assert compute_unfollowable_buy_ratio([], ["vs "]) == 0.0    # 没有买入不至于除零

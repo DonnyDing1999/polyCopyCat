@@ -32,7 +32,9 @@
     "max_total_exposure_usdc": 1000,
     "daily_max_loss_usdc": 100,
     "market_blacklist": [],
-    "kill_switch_file": "STOP"
+    "kill_switch_file": "STOP",
+    "_exposure_groups": "事件族敞口上限：同一叙事分散在多个市场时，单市场闸拦不住。每项 {name, patterns（标题关键词，不分大小写子串）, max_usdc}。例：[{\"name\": \"伊朗\", \"patterns\": [\"iran\", \"hormuz\", \"strait of hormuz\"], \"max_usdc\": 80}]",
+    "exposure_groups": []
   },
   "execution": {
     "slippage_cap": 0.02,
@@ -58,6 +60,9 @@
     "recruit_max_targets": 15,
     "recruit_min_score": 70.0,
     "recruit_max_per_round": 3,
+    "recruit_dismiss_min_signals": 50,
+    "recruit_dismiss_min_hours": 24,
+    "recruit_dismiss_cooldown_days": 14,
     "recruit_blocklist": []
   },
   "watch": {

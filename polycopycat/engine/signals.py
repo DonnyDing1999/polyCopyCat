@@ -8,6 +8,10 @@ from dataclasses import dataclass
 from ..models import Trade
 from .config import FilterConfig, TargetConfig
 
+# 暂停期被自动拦下的信号所记的 detail。零跟单率解聘要按它把这些信号剔出统计
+# （暂停造成的零执行不算「给过机会」），故提成常量，防两处文案各改各的。
+PAUSED_SIGNAL_DETAIL = "目标地址已暂停跟单"
+
 
 @dataclass(frozen=True)
 class Signal:
@@ -61,7 +65,7 @@ class SignalFilter:
         """
         trade = signal.trade
         if signal.target.paused:
-            return False, "目标地址已暂停跟单"
+            return False, PAUSED_SIGNAL_DETAIL
         if trade.side not in ("BUY", "SELL"):
             return False, f"未知方向 {trade.side!r}"
         if trade.side == "SELL" and not self._config.follow_sells:

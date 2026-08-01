@@ -81,6 +81,11 @@ class RiskGate:
                     f"${target_cost + intent.notional:.2f}，超过单目标单市场上限 "
                     f"${cfg.max_market_exposure_per_target_usdc:.2f}"
                 )
+        for group in cfg.exposure_groups:
+            # 一笔 intent 可能同时属于多个事件族（如「伊朗」与「中东」），逐组都要过闸
+            blocked = self._exposure_group_reason(group, intent)
+            if blocked:
+                return False, blocked
         if cfg.max_total_exposure_usdc is not None:
             total_cost = self._ledger.total_cost()
             if total_cost + intent.notional > cfg.max_total_exposure_usdc:
@@ -89,3 +94,31 @@ class RiskGate:
                     f"超过上限 ${cfg.max_total_exposure_usdc:.2f}"
                 )
         return True, ""
+
+    def _exposure_group_reason(self, group: dict, intent: OrderIntent) -> str:
+        """事件族敞口闸：命中该组则返回拦截理由，否则空串（放行）。
+
+        这是「同一叙事的相关持仓」的粗颗粒上限：intent 标题命中该组任一 pattern 时，
+        把当前持仓里标题同样命中的成本合计起来，加上这一笔仍超上限就拦。
+
+        语义上刻意保守——负相关腿（同一事件的 Yes 与 No）也会被同计。真正按相关性
+        自动聚类事件是以后的事，眼下宁可少开仓，也不要六个高相关市场一起归零。
+        持仓量级很小（几十行），直接把 positions() 拉回 Python 里按标题过滤即可。
+        无标题的持仓不参与匹配（成交推送偶尔缺 title，靠对账的
+        backfill_position_meta 回填后自动纳入）。
+        """
+        title = (intent.title or "").lower()
+        patterns = group["patterns"]
+        if not any(p in title for p in patterns):
+            return ""
+        cost = sum(
+            p.cost for p in self._ledger.positions()
+            if any(p2 in (p.title or "").lower() for p2 in patterns)
+        )
+        total = cost + intent.notional
+        if total <= group["max_usdc"]:
+            return ""
+        return (
+            f"事件族「{group['name']}」敞口将达 ${total:.2f}"
+            f"（已有 ${cost:.2f}），超过上限 ${group['max_usdc']:.2f}"
+        )

@@ -53,6 +53,9 @@ class TraderStats:
     # 极端价买入占比的支撑字段（按 notional 加权，不是按笔数）
     buy_notional_total: float = 0.0    # 买入总成交额
     buy_notional_extreme: float = 0.0  # 其中落在极端价（>0.85 或 <0.10）的部分
+    # 可跟性预检：买入成交额里落在「引擎会过滤掉的品类」的占比。replay 算不了这个
+    # （它不知道引擎的过滤器），由调用方用 compute_unfollowable_buy_ratio 算好挂上来。
+    unfollowable_buy_ratio: float = 0.0
     # 慢速做市/流动性提供指纹（从流水按 token 统计，与持仓时长无关）
     notional_total: float = 0.0        # 总成交额（买+卖）
     notional_churn: float = 0.0        # 「深度双向循环」token 上的成交额（买≥2且卖≥2）
@@ -106,6 +109,27 @@ class TraderStats:
     @property
     def trades_per_day(self) -> float:
         return self.n_trades / max(1, self.active_days)
+
+
+def compute_unfollowable_buy_ratio(trades: list[Trade], patterns: list[str]) -> float:
+    """买入成交额里标题命中 patterns 的占比（不分大小写子串匹配，按 notional 加权）。
+
+    与 replay 分开是有意的：回放只做通用的战绩口径，「哪些品类我们跟不了」是引擎侧
+    过滤器的真相（filters.skip_title_patterns），由调用方灌进来。patterns 为空返回 0，
+    上层的排除规则据此自然关闭。跳过异常成交的口径与 replay 一致。
+    """
+    lowered = [str(p).lower() for p in patterns or [] if str(p).strip()]
+    if not lowered:
+        return 0.0
+    total = hit = 0.0
+    for trade in trades:
+        if trade.side != "BUY" or trade.size <= 0 or trade.price <= 0:
+            continue
+        total += trade.notional
+        title = (trade.title or "").lower()
+        if any(p in title for p in lowered):
+            hit += trade.notional
+    return hit / total if total > 0 else 0.0
 
 
 def replay(

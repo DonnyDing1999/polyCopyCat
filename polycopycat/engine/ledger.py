@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .signals import OrderIntent, Signal
+from .signals import PAUSED_SIGNAL_DETAIL, OrderIntent, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -425,6 +425,24 @@ class Ledger:
                 (token_id,),
             ).fetchall()
         return {r["target"] for r in rows}
+
+    def target_signal_stats_since(self, target: str, ts: float) -> tuple[int, int]:
+        """某目标在 ts 之后的 (有效信号数, 已执行数)，供零跟单率解聘判定。
+
+        有效信号剔除「暂停期被自动拦下」的那些（detail 为 PAUSED_SIGNAL_DETAIL）——
+        目标被巡检暂停期间的零执行是暂停造成的，不能算「给过他机会」。时间用
+        created_ts（引擎收到信号的时刻）划界，与招募时刻同一条时间轴。
+        """
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT COUNT(*) AS n,
+                          SUM(CASE WHEN status = 'executed' THEN 1 ELSE 0 END) AS ok
+                   FROM signals
+                   WHERE target = ? AND created_ts >= ?
+                     AND NOT (status = 'filtered' AND detail = ?)""",
+                (str(target).lower(), float(ts), PAUSED_SIGNAL_DETAIL),
+            ).fetchone()
+        return row["n"] or 0, row["ok"] or 0
 
     def market_cost(self, condition_id: str) -> float:
         row = self._conn.execute(

@@ -155,6 +155,11 @@ class RiskConfig:
     daily_max_loss_usdc: float | None = 100.0
     market_blacklist: list[str] = field(default_factory=list)  # condition id 或 slug
     kill_switch_file: str = "STOP"  # 该文件存在时全面停止开新仓
+    # 事件族敞口上限：每项 {"name": 组名, "patterns": [标题关键词], "max_usdc": 上限}。
+    # 单市场闸按 condition_id 切，拦不住「同一叙事分散在六个市场」——实证：2/3 仓位压在
+    # 伊朗事件族的六个高相关市场上，每个都没超单市场上限，一起归零。这条按标题关键词
+    # 把同一叙事的持仓合并计额度。空数组=不启用。
+    exposure_groups: list = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.max_market_exposure_usdc = _positive(
@@ -168,6 +173,36 @@ class RiskConfig:
         if not isinstance(self.market_blacklist, list):
             raise ConfigError("risk.market_blacklist 应为字符串数组")
         self.market_blacklist = [str(x).lower() for x in self.market_blacklist]
+        self.exposure_groups = self._normalize_exposure_groups()
+
+    def _normalize_exposure_groups(self) -> list[dict]:
+        """校验并归一事件族配置：name 非空、patterns 非空数组（统一小写）、max_usdc 为正数。
+
+        结构不对直接抛 ConfigError——写错的敞口闸等于没有闸，不能静默放过。
+        """
+        if not isinstance(self.exposure_groups, list):
+            raise ConfigError("risk.exposure_groups 应为数组")
+        out: list[dict] = []
+        for index, raw in enumerate(self.exposure_groups):
+            where = f"risk.exposure_groups[{index}]"
+            if not isinstance(raw, dict):
+                raise ConfigError(f"{where} 应为对象，实际是 {type(raw).__name__}")
+            name = str(raw.get("name", "")).strip()
+            if not name:
+                raise ConfigError(f"{where}.name 不能为空")
+            patterns = raw.get("patterns")
+            if not isinstance(patterns, list):
+                raise ConfigError(f"{where}.patterns 应为字符串数组")
+            # 与 filters.skip_title_patterns 同语义：统一小写、匹配时不分大小写、空串忽略
+            patterns = [str(p).lower() for p in patterns if str(p).strip()]
+            if not patterns:
+                raise ConfigError(f"{where}.patterns 不能为空数组")
+            out.append({
+                "name": name,
+                "patterns": patterns,
+                "max_usdc": _positive(f"{where}.max_usdc", raw.get("max_usdc"), allow_none=False),
+            })
+        return out
 
 
 @dataclass
@@ -246,6 +281,12 @@ class HealthConfig:
     # 不设门槛等于把一大批擦线合格的也招进来。0 视为不设门槛。
     recruit_min_score: float = 70.0
     recruit_max_per_round: int = 3        # 每轮（每小时摘要点）最多招几个；≤0 不限
+    # 零跟单率自动解聘（只对自动招募的目标）：实证 8 个招募目标产出 1,137 条信号执行 0 条——
+    # 战绩画像都真实优秀，但交易的品类我们跟不了（当日网球/足球盘全被标题过滤器拦下）。
+    # 给足机会仍然一条都执行不了，就该释放名额。配置目标（用户手写的）永不解聘。
+    recruit_dismiss_min_signals: int = 50     # 招募后累计有效信号达此数才判；≤0 关闭本机制
+    recruit_dismiss_min_hours: float = 24.0   # 且距招募满此小时数（信号来得快也要给够观察时长）
+    recruit_dismiss_cooldown_days: float = 14.0  # 解聘后多少天内不再回招（人会变，冷却过后允许再试）
     # 永不招募的地址：scout 打分看不出问题、但人工判定不该跟的（如只做当日盘、
     # 信号必然过期）。启动时也会把已在招募档案里的黑名单地址剔出去。
     recruit_blocklist: list[str] = field(default_factory=list)
@@ -307,6 +348,21 @@ class HealthConfig:
             raise ConfigError(
                 f"health.recruit_max_per_round 应为整数，实际是 {self.recruit_max_per_round!r}"
             ) from None
+        # ≤0 表示关闭解聘，故不用 max(1, ...) 夹
+        try:
+            self.recruit_dismiss_min_signals = int(self.recruit_dismiss_min_signals)
+        except (TypeError, ValueError):
+            raise ConfigError(
+                "health.recruit_dismiss_min_signals 应为整数，实际是 "
+                f"{self.recruit_dismiss_min_signals!r}"
+            ) from None
+        self.recruit_dismiss_min_hours = _positive(
+            "health.recruit_dismiss_min_hours", self.recruit_dismiss_min_hours, allow_none=False
+        )
+        self.recruit_dismiss_cooldown_days = _positive(
+            "health.recruit_dismiss_cooldown_days", self.recruit_dismiss_cooldown_days,
+            allow_none=False,
+        )
         if isinstance(self.recruit_blocklist, str):
             raise ConfigError("health.recruit_blocklist 应为地址数组，不是字符串")
         self.recruit_blocklist = [normalize_address(a) for a in (self.recruit_blocklist or [])]

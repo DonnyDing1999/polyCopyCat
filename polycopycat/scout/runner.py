@@ -12,7 +12,7 @@ import requests
 
 from .._http import HttpError, get_json
 from ..data_api import DataApiClient, DataApiError, normalize_address
-from .metrics import replay
+from .metrics import compute_unfollowable_buy_ratio, replay
 from .score import ScoutConfig, Verdict, evaluate
 
 logger = logging.getLogger(__name__)
@@ -128,6 +128,10 @@ def scout_addresses(
             ))
             continue
         stats = replay(address, tape, quick_window_s=config.quick_window_s)
+        # 可跟性预检的支撑指标：只有这里手上同时有 tape 和配置里的过滤品类
+        stats.unfollowable_buy_ratio = compute_unfollowable_buy_ratio(
+            tape, config.unfollowable_title_patterns
+        )
         verdicts.append(evaluate(stats, positions, config, now=now))
     verdicts.sort(key=lambda v: (not v.eligible, -v.score))
     return verdicts

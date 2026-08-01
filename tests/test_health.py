@@ -1,13 +1,15 @@
-"""目标健康巡检：scout 排除规则复查在跟目标，自动暂停/复跟。"""
+"""目标健康巡检：scout 排除规则复查在跟目标，自动暂停/复跟；零跟单率自动解聘。"""
 
+import json
 import time
 
 from polycopycat.engine.clob import BookLevel, MarketInfo, OrderBook
-from polycopycat.engine.config import EngineConfig
+from polycopycat.engine.config import EngineConfig, TargetConfig
 from polycopycat.engine.engine import CopyEngine
 from polycopycat.engine.executor import PaperExecutor
 from polycopycat.engine.ledger import Ledger
 from polycopycat.engine.notify import Notifier
+from polycopycat.engine.signals import PAUSED_SIGNAL_DETAIL, Signal
 from polycopycat.models import Trade
 
 ADDR_A = "0x" + "a" * 40
@@ -311,6 +313,149 @@ def test_persisted_timer_triggers_overdue_check(tmp_path):
     engine._maybe_check_health()            # 超期 → 立即触发
     assert engine._targets[ADDR_B].paused is True
     ledger1.close()
+
+
+# ---- 零跟单率自动解聘（只对自动招募的目标）----
+
+RECRUIT = "0x" + "e" * 40
+
+
+def _iso(ts):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+
+
+def make_recruit_engine(tmp_path, *, hours_ago=48.0, recruited_at=..., **health):
+    """一个在跟 ADDR_A（配置目标）+ RECRUIT（自动招募，档案已落盘）的引擎。
+
+    recruited_at 默认按 hours_ago 小时前写入；显式传 None 模拟 0.33 之前缺该字段的老档案。
+    """
+    entry = {"address": RECRUIT, "ratio": 0.05, "max_per_trade_usdc": 25, "score": 88.0}
+    if recruited_at is ...:
+        entry["recruited_at"] = _iso(time.time() - hours_ago * 3600)
+    elif recruited_at is not None:
+        entry["recruited_at"] = recruited_at
+    (tmp_path / "recruited.json").write_text(json.dumps([entry]), encoding="utf-8")
+    data = FakeDataClient(
+        tapes={a: healthy_tape(a) for a in (ADDR_A, RECRUIT)}
+    )
+    config = EngineConfig.from_dict({
+        "targets": [{"address": ADDR_A}, {"address": RECRUIT}],
+        "risk": {"kill_switch_file": ""},
+        "aggregate": {"window_s": 0},
+        "health": {"check_interval_s": 21600, **health},
+        "ledger_path": str(tmp_path / "copycat.sqlite3"),
+    })
+    clob = FakeClob()
+    ledger = Ledger(":memory:")
+    notifier = ListNotifier()
+    engine = CopyEngine(config, clob=clob, ledger=ledger, executor=PaperExecutor(clob),
+                        notifier=notifier, data_client=data)
+    assert RECRUIT in engine._recruited  # 招募身份被认出来了，否则后面测的都是空
+    return engine, notifier, ledger
+
+
+def seed_signals(ledger, target, n, *, status="filtered", detail="命中短期盘过滤规则「vs 」，不跟",
+                 tag="a"):
+    """给 target 落 n 条信号（默认：被标题过滤器拦下，即零跟单率的典型形态）。"""
+    now = time.time()
+    for i in range(n):
+        trade = Trade(
+            proxy_wallet=target, side="BUY", asset=f"tok{tag}{i}", condition_id="0xc",
+            size=100, price=0.5, timestamp=int(now), title="T", outcome="Yes",
+            transaction_hash=f"0x{target[-3:]}{tag}{i}",
+        )
+        sid, _ = ledger.record_signal(
+            Signal(trade=trade, target=TargetConfig(address=target), received_at=now)
+        )
+        ledger.update_signal(sid, status, detail)
+
+
+def test_dismiss_zero_follow_recruit_at_threshold(tmp_path):
+    engine, notifier, led = make_recruit_engine(tmp_path)
+    seed_signals(led, RECRUIT, 49)
+    engine._dismiss_idle_recruits()
+    assert RECRUIT in engine._targets      # 49 < 50：还差一条，不解聘
+
+    seed_signals(led, RECRUIT, 1, tag="b")
+    engine._dismiss_idle_recruits()
+    assert RECRUIT not in engine._targets  # 达阈值 → 解聘，名额释放
+    assert RECRUIT not in engine._recruited
+    assert json.loads((tmp_path / "recruited.json").read_text()) == []   # 档案重写
+    assert led.target_event_summary()[RECRUIT]["last_kind"] == "recruit_dismiss"
+    assert any("自动解聘" in m and "50 条" in m for m in notifier.messages)
+    assert RECRUIT in json.loads(led.get_state("recruit_dismissed"))     # 进冷却名单
+
+
+def test_dismiss_requires_min_hours(tmp_path):
+    # 信号数早就够了，但招募才 12 小时：观察时长不够，不算给过机会
+    engine, _, led = make_recruit_engine(tmp_path, hours_ago=12)
+    seed_signals(led, RECRUIT, 200)
+    engine._dismiss_idle_recruits()
+    assert RECRUIT in engine._targets
+
+
+def test_dismiss_excludes_paused_period_signals(tmp_path):
+    # 暂停期被自动拦下的信号不算数——那是暂停造成的零执行，不是「品类跟不了」
+    engine, _, led = make_recruit_engine(tmp_path)
+    seed_signals(led, RECRUIT, 200, detail=PAUSED_SIGNAL_DETAIL)
+    engine._dismiss_idle_recruits()
+    assert RECRUIT in engine._targets
+
+    seed_signals(led, RECRUIT, 50, tag="real")   # 补上 50 条真·有效信号
+    engine._dismiss_idle_recruits()
+    assert RECRUIT not in engine._targets
+
+
+def test_dismiss_spares_target_with_any_execution(tmp_path):
+    engine, _, led = make_recruit_engine(tmp_path)
+    seed_signals(led, RECRUIT, 199)
+    seed_signals(led, RECRUIT, 1, status="executed", detail="", tag="ok")
+    engine._dismiss_idle_recruits()
+    assert RECRUIT in engine._targets  # 跟成过一笔就不是「零跟单率」
+
+
+def test_dismiss_never_touches_config_targets(tmp_path):
+    # 配置目标是用户手写的：跟单率列已经摆在 report 里，该不该留由他自己判断
+    engine, _, led = make_recruit_engine(tmp_path)
+    seed_signals(led, ADDR_A, 200)
+    engine._dismiss_idle_recruits()
+    assert ADDR_A in engine._targets
+
+
+def test_dismiss_disabled_by_non_positive_threshold(tmp_path):
+    engine, _, led = make_recruit_engine(tmp_path, recruit_dismiss_min_signals=0)
+    seed_signals(led, RECRUIT, 500)
+    engine._dismiss_idle_recruits()
+    assert RECRUIT in engine._targets
+
+
+def test_dismiss_skips_legacy_entry_without_recruited_at(tmp_path):
+    # 老档案没有 recruited_at：无从判断观察时长，保守不动
+    engine, _, led = make_recruit_engine(tmp_path, recruited_at=None)
+    seed_signals(led, RECRUIT, 500)
+    engine._dismiss_idle_recruits()
+    assert RECRUIT in engine._targets
+
+
+def test_dismiss_clears_health_pause_state(tmp_path):
+    engine, _, led = make_recruit_engine(tmp_path)
+    engine._targets[RECRUIT].paused = True
+    engine._health_paused.add(RECRUIT)
+    engine._persist_health_paused()
+    seed_signals(led, RECRUIT, 50)
+    engine._dismiss_idle_recruits()
+    assert RECRUIT not in engine._targets
+    assert RECRUIT not in engine._health_paused
+    assert json.loads(led.get_state("health_paused")) == []  # 持久化也一并清掉
+
+
+def test_dismiss_runs_inside_health_check(tmp_path):
+    # 解聘挂在巡检节拍上：巡检跑一次即生效，且不会顺带把配置目标停掉
+    engine, _, led = make_recruit_engine(tmp_path)
+    seed_signals(led, RECRUIT, 50)
+    engine.check_targets_health()
+    assert RECRUIT not in engine._targets
+    assert engine._targets[ADDR_A].paused is False
 
 
 def test_manual_config_pause_not_hijacked_by_state(tmp_path):

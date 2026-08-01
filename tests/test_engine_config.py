@@ -99,3 +99,57 @@ def test_unknown_keys_only_warn(tmp_path):
     path.write_text(json.dumps(minimal(unknown_top=1, risk={"whatever": 2})), encoding="utf-8")
     config = load_config(path)  # 不应抛错
     assert config.risk.max_total_exposure_usdc == 1000.0
+
+
+# ---- 事件族敞口闸的配置校验 ----
+
+def test_exposure_groups_normalized():
+    config = EngineConfig.from_dict(minimal(risk={"exposure_groups": [
+        {"name": "伊朗", "patterns": ["Iran", "HORMUZ", "  "], "max_usdc": 80},
+    ]}))
+    assert config.risk.exposure_groups == [
+        {"name": "伊朗", "patterns": ["iran", "hormuz"], "max_usdc": 80.0}
+    ]
+    assert EngineConfig.from_dict(minimal()).risk.exposure_groups == []   # 默认不启用
+
+
+@pytest.mark.parametrize("group, match", [
+    ({"patterns": ["iran"], "max_usdc": 80}, "name"),                     # 缺 name
+    ({"name": "  ", "patterns": ["iran"], "max_usdc": 80}, "name"),       # name 全空白
+    ({"name": "伊朗", "max_usdc": 80}, "patterns"),                       # 缺 patterns
+    ({"name": "伊朗", "patterns": [], "max_usdc": 80}, "patterns"),       # 空数组
+    ({"name": "伊朗", "patterns": "iran", "max_usdc": 80}, "patterns"),   # 写成裸字符串
+    ({"name": "伊朗", "patterns": ["iran"]}, "max_usdc"),                 # 缺上限
+    ({"name": "伊朗", "patterns": ["iran"], "max_usdc": None}, "max_usdc"),
+    ({"name": "伊朗", "patterns": ["iran"], "max_usdc": 0}, "max_usdc"),  # 非正数
+])
+def test_exposure_groups_reject_bad_structure(group, match):
+    # 写错的敞口闸等于没有闸，必须报错而不是静默忽略
+    with pytest.raises(ConfigError, match=match):
+        EngineConfig.from_dict(minimal(risk={"exposure_groups": [group]}))
+
+
+def test_exposure_groups_reject_non_object_entries():
+    with pytest.raises(ConfigError, match="应为对象"):
+        EngineConfig.from_dict(minimal(risk={"exposure_groups": ["iran"]}))
+    with pytest.raises(ConfigError, match="应为数组"):
+        EngineConfig.from_dict(minimal(risk={"exposure_groups": {"name": "伊朗"}}))
+
+
+# ---- 零跟单率解聘的配置校验 ----
+
+def test_recruit_dismiss_defaults_and_validation():
+    health = EngineConfig.from_dict(minimal()).health
+    assert health.recruit_dismiss_min_signals == 50
+    assert health.recruit_dismiss_min_hours == 24.0
+    assert health.recruit_dismiss_cooldown_days == 14.0
+    # ≤0 = 关闭本机制，不该被夹成正数
+    assert EngineConfig.from_dict(
+        minimal(health={"recruit_dismiss_min_signals": 0})
+    ).health.recruit_dismiss_min_signals == 0
+    with pytest.raises(ConfigError, match="recruit_dismiss_min_signals"):
+        EngineConfig.from_dict(minimal(health={"recruit_dismiss_min_signals": "很多"}))
+    with pytest.raises(ConfigError, match="recruit_dismiss_min_hours"):
+        EngineConfig.from_dict(minimal(health={"recruit_dismiss_min_hours": 0}))
+    with pytest.raises(ConfigError, match="recruit_dismiss_cooldown_days"):
+        EngineConfig.from_dict(minimal(health={"recruit_dismiss_cooldown_days": None}))

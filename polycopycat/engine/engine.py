@@ -12,6 +12,7 @@ M3 聚合：收到首笔信号后先等一个窗口（aggregate.window_s，默�
 
 from __future__ import annotations
 
+import calendar
 import dataclasses
 import json
 import logging
@@ -44,6 +45,22 @@ def _short(text: str) -> str:
 
 def _recruited_path(config: EngineConfig) -> Path:
     return Path(config.ledger_path).parent / "recruited.json"
+
+
+_RECRUITED_AT_FMT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def _parse_recruited_at(raw) -> float | None:
+    """招募档案里的 recruited_at（UTC ISO 串）→ unix 秒；缺失或解析不了返回 None。
+
+    0.33 之前写入的老档案没有这个字段，调用方据此保守跳过（宁可不解聘）。
+    """
+    if not raw:
+        return None
+    try:
+        return float(calendar.timegm(time.strptime(str(raw), _RECRUITED_AT_FMT)))
+    except (TypeError, ValueError):
+        return None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -770,9 +787,14 @@ class CopyEngine:
 
         手动暂停（配置 paused=true 且非巡检所为）的目标不碰；数据拉取失败
         跳过该目标（绝不因网络抖动误停）。
+
+        零跟单率解聘（_dismiss_idle_recruits）也挂在这个节拍上——它不需要拉接口，
+        只是没必要为它单开一路计时。故 check_interval_s=0 关掉巡检时解聘也一并关掉。
         """
         if self._data is None:
             return
+        # 先解聘再巡检：名额腾出来了，被解聘的目标本轮也不必再拉接口考核
+        self._dismiss_idle_recruits()
         from ..scout import ScoutConfig, replay
         from ..scout.score import evaluate_health
 
@@ -822,6 +844,97 @@ class CopyEngine:
                     f"⚠️ 健康巡检：{_short(address)} 命中排除规则（{reasons}），"
                     "建议人工复查（auto_pause 已关闭，仍在跟单）"
                 )
+
+    def _dismiss_idle_recruits(self) -> None:
+        """零跟单率解聘：自动招募的目标给足机会仍 0 执行 → 解聘，释放名额。
+
+        **只对自动招募的目标**（在 self._recruited 里的）。配置目标是用户手写的，
+        report 已经把跟单率列给他看了，该不该留由他自己判断，不越权。
+
+        判定三个条件同时成立：自 recruited_at 起的有效信号数 ≥
+        recruit_dismiss_min_signals（有效 = 剔除暂停期被自动拦下的，那些零执行是
+        暂停造成的、不算给过机会）、距 recruited_at ≥ recruit_dismiss_min_hours、
+        且这些信号一条都没执行成。前者防「刚招进来还没动静就赶人」，后者防
+        「信号来得快、观察时长其实不够」。
+
+        解聘不是暂停：档案里删掉、名额立刻释放，并进 recruit_dismissed 冷却名单
+        防止下一轮又从名录里把同一个人招回来。冷却过后允许再试（人会变，且可跟性
+        预检会在入口再拦一次）。老档案缺 recruited_at 的保守跳过。
+        """
+        health = self.config.health
+        if health.recruit_dismiss_min_signals <= 0:  # ≤0 关闭本机制
+            return
+        now = time.time()
+        dismissed: dict[str, float] = {}
+        for address in list(self._recruited):
+            if address not in self._targets:
+                continue  # 档案里有、但已不在跟（理论上不会出现），不动
+            recruited_at = _parse_recruited_at(self._recruited[address].get("recruited_at"))
+            if recruited_at is None:
+                continue  # 老档案没有招募时间：无从判断观察时长，保守不解聘
+            hours = (now - recruited_at) / 3600
+            if hours < health.recruit_dismiss_min_hours:
+                continue
+            signals, executed = self._ledger.target_signal_stats_since(address, recruited_at)
+            if executed > 0 or signals < health.recruit_dismiss_min_signals:
+                continue
+            detail = (
+                f"招募 {hours:.0f} 小时内产生 {signals} 条有效信号、执行 0 条，"
+                "品类不可跟，已解聘释放名额"
+            )
+            self._targets.pop(address, None)
+            self._recruited.pop(address, None)
+            if address in self._health_paused:
+                self._health_paused.discard(address)
+                self._persist_health_paused()
+            dismissed[address] = now
+            self._ledger.record_event("recruit_dismiss", address, detail)
+            self._notifier.send(
+                f"📤 自动解聘：{_short(address)} —— {detail}"
+                f"（{health.recruit_dismiss_cooldown_days:.0f} 天内不再回招）"
+            )
+        if not dismissed:
+            return
+        self._write_recruited()
+        self._dismissed_recruits(now, add=dismissed)
+        logger.info(
+            "已解聘 %d 个零跟单率的招募目标: %s",
+            len(dismissed), ", ".join(_short(a) for a in dismissed),
+        )
+
+    def _dismissed_recruits(self, now: float, *, add: dict | None = None) -> dict:
+        """读写解聘冷却名单（账本 state 表 recruit_dismissed，{地址: 解聘时间}）。
+
+        读写时顺手清掉冷却期已过的条目（同 _dedup_notify 的做法），名单不会无限膨胀；
+        清完即落库，所以「冷却过后可再招」不需要额外的过期逻辑。
+        """
+        raw = self._ledger.get_state("recruit_dismissed")
+        try:
+            entries = json.loads(raw) if raw else {}
+        except ValueError:
+            entries = {}
+        if not isinstance(entries, dict):
+            entries = {}
+        cutoff = now - self.config.health.recruit_dismiss_cooldown_days * 86400
+        entries = {
+            a: ts for a, ts in entries.items()
+            if isinstance(ts, (int, float)) and ts >= cutoff
+        }
+        if add:
+            entries.update(add)
+        self._ledger.set_state("recruit_dismissed", json.dumps(entries))
+        return entries
+
+    def _write_recruited(self) -> None:
+        """原子重写招募档案（招募与解聘共用；用户配置文件永远不动）。"""
+        path = _recruited_path(self.config)
+        tmp = path.with_suffix(".tmp")
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(
+            json.dumps(list(self._recruited.values()), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        tmp.replace(path)
 
     # ---- 候选发现（票池 + 涓流评估）----
 
@@ -988,7 +1101,13 @@ class CopyEngine:
         )
         if not due:
             return 0
-        verdicts = scout_addresses(self._data, due, config=ScoutConfig())
+        # 发现口径与执行过滤器共用一套真相：引擎实际会拦下的品类（skip_title_patterns）
+        # 就是候选身上「跟不了」的品类。不灌这一份，scout 只知道这人水平高不高，
+        # 不知道他玩的场子我们进不进得去——0.33 那 1,137 条信号 0 执行就是这么来的。
+        scout_config = ScoutConfig(
+            unfollowable_title_patterns=self.config.filters.skip_title_patterns
+        )
+        verdicts = scout_addresses(self._data, due, config=scout_config)
         now = time.time()
         for v in verdicts:
             self._ledger.discover_universe_record_eval(
@@ -1109,6 +1228,9 @@ class CopyEngine:
             logger.warning("auto_recruit 仅纸面模式生效，实盘模式忽略（%d 个合格候选）", len(eligible))
             return []
         blocked = set(health.recruit_blocklist)
+        # 解聘冷却：刚被零跟单率解聘的人还躺在名录里（他的战绩没变，分数照样高），
+        # 不挡一下就会下一轮原地招回来
+        cooling = self._dismissed_recruits(time.time())
         recruited: list[str] = []
         for verdict in eligible:  # 已按分数降序
             if len(self._targets) >= health.recruit_max_targets:
@@ -1120,6 +1242,9 @@ class CopyEngine:
                 break
             if verdict.address in blocked:
                 logger.info("候选 %s 在黑名单，跳过招募", _short(verdict.address))
+                continue
+            if verdict.address in cooling:
+                logger.info("候选 %s 在解聘冷却期内，跳过招募", _short(verdict.address))
                 continue
             # 分数门槛：合格只是及格线，擦线者不值得占一个名额
             if verdict.score < health.recruit_min_score:
@@ -1152,15 +1277,11 @@ class CopyEngine:
                 except Exception:  # noqa: BLE001 —— 回调失败不阻塞招募（轮询兜底仍会盯）
                     logger.exception("通知监控层新目标失败: %s", target.address)
         if recruited:
-            path = _recruited_path(self.config)
-            tmp = path.with_suffix(".tmp")
-            tmp.parent.mkdir(parents=True, exist_ok=True)
-            tmp.write_text(
-                json.dumps(list(self._recruited.values()), ensure_ascii=False, indent=2),
-                encoding="utf-8",
+            self._write_recruited()
+            logger.info(
+                "已招募 %d 个新目标并写入档案: %s",
+                len(recruited), _recruited_path(self.config),
             )
-            tmp.replace(path)
-            logger.info("已招募 %d 个新目标并写入档案: %s", len(recruited), path)
         return recruited
 
     def _settle_resolved_positions(self) -> None:

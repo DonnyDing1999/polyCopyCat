@@ -87,6 +87,15 @@ class ScoutConfig:
     # 各样本口径都够呛卡得住，这条按持仓时长直接筛。复用 min_quick_sample 作样本下限
     # （同属「快速交易」判定）。evaluate_health 不豁免此规则（在跟目标速刷化就该停）。
     min_median_holding_s: float = 3600.0
+    # 可跟性预检（只在发现/招聘口径）：候选交易的品类我们跟不跟得了。实证——按分数招进来的
+    # 8 个人战绩画像都真实优秀，产出 1,137 条信号执行 0 条，64% 被标题过滤器拦（全是当日
+    # 网球/足球盘）。scout 原本只衡量「这人水平高不高」，这条补上「他玩的场子我们进不进得去」。
+    # 引擎侧接线时灌入 filters.skip_title_patterns，与执行过滤器共用一套真相。空=关闭。
+    unfollowable_title_patterns: list[str] = field(default_factory=list)
+    # 阈值 0.7 而不是更低：允许「一半比赛盘一半长线」的人进来（我们跟他长线的那半），
+    # 只拦基本全是不可跟品类的。evaluate_health 用 replace 关掉这条（对在跟目标不适用——
+    # 实际跟单率由零跟单率解聘管，这条只管入口）。
+    max_unfollowable_ratio: float = 0.7
     # ---- 打分权重与端点（满分 100 = ROI 30 + Wilson 20 + 持仓 15 + 极端价 10 + 一致性 15 +
     # 新鲜度 10；改权重时自行保证求和）。设计意图见 evaluate 打分段注释：奖励「可延迟复制的
     # 判断」，不奖励「资金大/买热门/手速快」。所有阈值走字段、不在函数里写死魔法数。----
@@ -168,6 +177,7 @@ def evaluate_health(
         min_exposure_for_drawdown_usdc=float("inf"),  # 关掉招聘版死仓规则
         min_realized_pnl=float("-inf"),               # 盈亏改用窗口净口径判
         min_judgeable_sells=0,                        # 考核口径关掉可判性闸（窗口净盈亏兜底）
+        unfollowable_title_patterns=[],               # 考核口径关掉可跟性预检（那是入口闸）
     )
     verdict = evaluate(stats, positions, base_config, now=now)
     reasons = list(verdict.reasons)
@@ -267,6 +277,14 @@ def evaluate(
         reasons.append(
             f"配对卖出仅 {stats.matched_sells} 笔（< {config.min_judgeable_sells}），"
             "战绩无法自证（纯买入/撒币账户）"
+        )
+    if (
+        config.unfollowable_title_patterns
+        and stats.unfollowable_buy_ratio > config.max_unfollowable_ratio
+    ):
+        reasons.append(
+            f"成交带 {stats.unfollowable_buy_ratio:.0%} 的买入在被过滤品类"
+            "（比赛盘/日内盘等），可跟信号不足"
         )
     if stats.matched_sells >= config.min_pnl_sample and stats.realized_pnl < config.min_realized_pnl:
         reasons.append(f"回放已实现亏损（${stats.realized_pnl:,.2f}）")

@@ -28,14 +28,14 @@ def market(**kwargs):
     return MarketInfo(**defaults)
 
 
-def intent(side="BUY", limit=0.50, size=100.0, cond="0xcond", token="tok1"):
+def intent(side="BUY", limit=0.50, size=100.0, cond="0xcond", token="tok1", title="T"):
     return OrderIntent(
         token_id=token, condition_id=cond, side=side, limit_price=limit,
-        size=size, ref_price=0.5, neg_risk=False, title="T", outcome="Yes",
+        size=size, ref_price=0.5, neg_risk=False, title=title, outcome="Yes",
     )
 
 
-def seed_position(ledger, cost_size=100.0, avg=0.5, token="tok1", cond="0xcond"):
+def seed_position(ledger, cost_size=100.0, avg=0.5, token="tok1", cond="0xcond", title="T"):
     trade = Trade(
         proxy_wallet=ADDR, side="BUY", asset=token, condition_id=cond,
         size=cost_size, price=avg, timestamp=int(time.time()), transaction_hash=f"0x{token}",
@@ -43,7 +43,7 @@ def seed_position(ledger, cost_size=100.0, avg=0.5, token="tok1", cond="0xcond")
     sid, _ = ledger.record_signal(
         Signal(trade=trade, target=TargetConfig(address=ADDR), received_at=time.time())
     )
-    ledger.record_order(sid, intent(size=cost_size, limit=avg, token=token, cond=cond),
+    ledger.record_order(sid, intent(size=cost_size, limit=avg, token=token, cond=cond, title=title),
                         mode="paper", status="filled", filled_size=cost_size, avg_price=avg)
     return sid
 
@@ -177,3 +177,83 @@ def test_per_target_exposure_deducts_sells(ledger):
     assert ok
     ok, reason = gate.check(intent(size=64, limit=0.5), market(), T1)  # 30+32 > 60
     assert not ok and "单目标单市场" in reason
+
+
+# ---- 事件族敞口闸 ----
+
+IRAN = {"name": "伊朗", "patterns": ["iran", "hormuz"], "max_usdc": 80.0}
+MIDEAST = {"name": "中东", "patterns": ["iran", "israel"], "max_usdc": 60.0}
+
+
+def group_gate(ledger, *groups):
+    """只开事件族闸、其余额度全关，隔离被测规则。"""
+    return RiskGate(
+        RiskConfig(
+            kill_switch_file="", max_market_exposure_usdc=None,
+            max_market_exposure_per_target_usdc=None, max_total_exposure_usdc=None,
+            daily_max_loss_usdc=None, exposure_groups=[dict(g) for g in groups],
+        ),
+        ledger,
+    )
+
+
+def test_exposure_group_merges_related_markets(ledger):
+    # 同一叙事分散在两个市场：单市场闸各自都不超，只有合并计额度才拦得住
+    seed_position(ledger, cost_size=100, avg=0.5, token="t1", cond="0xc1",
+                  title="Will Iran and Israel reach a ceasefire?")   # $50
+    seed_position(ledger, cost_size=40, avg=0.5, token="t2", cond="0xc2",
+                  title="Strait of Hormuz closed in 2026?")          # $20 → 族内共 $70
+    gate = group_gate(ledger, IRAN)
+    ok, _ = gate.check(intent(size=20, limit=0.5, cond="0xc3", token="t3",
+                              title="Iran nuclear deal?"), market())      # 70+10 ≤ 80
+    assert ok
+    ok, reason = gate.check(intent(size=40, limit=0.5, cond="0xc3", token="t3",
+                                   title="Iran nuclear deal?"), market())  # 70+20 > 80
+    assert not ok and "伊朗" in reason and "90.00" in reason and "80.00" in reason
+
+
+def test_exposure_group_ignores_unmatched_intent(ledger):
+    # 族内早就爆了，但这笔标题不属于该族 → 这一族根本不参与判定
+    seed_position(ledger, cost_size=1000, avg=0.5, token="t1", cond="0xc1",
+                  title="Iran ceasefire?")   # $500
+    gate = group_gate(ledger, IRAN)
+    ok, _ = gate.check(intent(size=1000, limit=0.5, cond="0xc9", token="t9",
+                              title="Will BTC hit $200k?"), market())
+    assert ok
+
+
+def test_exposure_group_checks_every_matching_group(ledger):
+    # 一笔 intent 同时命中两族：伊朗族额度还够、中东族已满 → 逐组过闸才拦得下
+    seed_position(ledger, cost_size=100, avg=0.5, token="t1", cond="0xc1",
+                  title="Israel strikes?")   # 只命中中东族，$50
+    gate = group_gate(ledger, IRAN, MIDEAST)
+    ok, reason = gate.check(intent(size=40, limit=0.5, cond="0xc2", token="t2",
+                                   title="Iran ceasefire?"), market())
+    assert not ok and "中东" in reason   # 伊朗族 0+20 ≤ 80 放行，中东族 50+20 > 60 拦下
+
+
+def test_exposure_group_allows_sells(ledger):
+    seed_position(ledger, cost_size=1000, avg=0.5, token="t1", cond="0xc1",
+                  title="Iran ceasefire?")   # 族内 $500，远超上限
+    gate = group_gate(ledger, IRAN)
+    ok, _ = gate.check(intent(side="SELL", size=1000, limit=0.5, cond="0xc1",
+                              token="t1", title="Iran ceasefire?"), market())
+    assert ok   # 减仓永不拦
+
+
+def test_exposure_group_skips_untitled_positions(ledger):
+    # 无标题的持仓不参与匹配（成交推送偶尔缺 title，靠对账回填后才纳入）
+    seed_position(ledger, cost_size=1000, avg=0.5, token="t1", cond="0xc1", title="")
+    gate = group_gate(ledger, IRAN)
+    ok, _ = gate.check(intent(size=100, limit=0.5, cond="0xc2", token="t2",
+                              title="Iran ceasefire?"), market())
+    assert ok   # 只算这笔自己的 $50，那 $500 不计
+
+
+def test_exposure_group_disabled_by_default(ledger):
+    seed_position(ledger, cost_size=1000, avg=0.5, token="t1", cond="0xc1",
+                  title="Iran ceasefire?")
+    gate = group_gate(ledger)   # 空数组 = 不启用
+    ok, _ = gate.check(intent(size=1000, limit=0.5, cond="0xc2", token="t2",
+                              title="Iran ceasefire?"), market())
+    assert ok
