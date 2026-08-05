@@ -59,12 +59,15 @@ class SignalFilter:
         """逐笔检查（金额阈值除外——那个在聚合合并后检查，见 check_notional）。
 
         holding=True 表示我们已持有该 token。此时目标卖出，「他还在场」这个前提
-        本身已经没了——晚离场几乎总好过拿到归零。所以已持仓的 SELL 信号跳过时效闸
-        与 skip_title_patterns（这两个闸只该拦进场；仓位还可能是加过滤规则之前建的）。
-        paused、follow_sells、价格/数量合法性照旧拦。
+        本身已经没了——晚离场几乎总好过拿到归零。所以已持仓的 SELL 信号跳过时效闸、
+        skip_title_patterns，**以及 paused**（2026-08-05 实测教训：建仓目标被巡检
+        暂停后部分减仓，3 条卖出信号全被暂停闸拦下，我们抱 463 份到归零 -$69——
+        强平兜底只认「全清仓」，部分减仓够不到；仓位因他而建，他离场即论点消失，
+        暂停与否不改变这一点）。follow_sells、价格/数量合法性照旧拦。
         """
         trade = signal.trade
-        if signal.target.paused:
+        exiting = holding and trade.side == "SELL"  # 已持仓的离场信号，绕过进场闸
+        if signal.target.paused and not exiting:
             return False, PAUSED_SIGNAL_DETAIL
         if trade.side not in ("BUY", "SELL"):
             return False, f"未知方向 {trade.side!r}"
@@ -72,7 +75,6 @@ class SignalFilter:
             return False, "已配置不跟随卖出"
         if trade.price <= 0 or trade.size <= 0:
             return False, "成交价格或数量非法"
-        exiting = holding and trade.side == "SELL"  # 已持仓的离场信号，绕过进场闸
         if not exiting and self._config.skip_title_patterns:
             title = (trade.title or "").lower()
             for pattern in self._config.skip_title_patterns:

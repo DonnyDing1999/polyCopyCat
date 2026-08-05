@@ -141,7 +141,7 @@ polycopycat report --config copycat.json --mark        # 拉实时盘口给持�
 | **targets[]** |  | 跟单目标，至少一个 |
 | `.address` | 必填 | 目标 proxy wallet 地址 |
 | `.ratio` / `.max_per_trade_usdc` | 继承 sizing | 按目标覆盖比例/单笔上限 |
-| `.paused` | false | 暂停跟单（仍监控、仍维护镜像） |
+| `.paused` | false | 暂停跟单（仍监控、仍维护镜像）。**例外：已持仓的卖出信号照跟**——暂停目标部分减仓时若拦他的卖出，会抱着他建的仓拿到归零（2026-08 实测 -$69：强平兜底只认全清仓，部分减仓够不到），离场优先高于暂停语义 |
 | **sizing** |  | 买入金额怎么算 |
 | `.mode` | `proportional` | `proportional`：目标金额×ratio；`fixed`：固定 fixed_usdc |
 | `.ratio` / `.fixed_usdc` / `.max_per_trade_usdc` | 0.1 / 20 / 100 | 比例、固定额、单笔上限 |

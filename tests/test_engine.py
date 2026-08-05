@@ -388,6 +388,29 @@ def test_filter_holding_does_not_bypass_buy():
     assert not flt.check(_make_signal(side="BUY", title="SPX Up or Down?"), holding=True)[0]
 
 
+def _make_paused_signal(*, side="SELL", age_s=0.0):
+    signal = _make_signal(side=side, age_s=age_s)
+    signal.target.paused = True
+    return signal
+
+
+def test_filter_holding_sell_bypasses_paused():
+    """2026-08-05 实测教训：建仓目标被巡检暂停后部分减仓，卖出信号被暂停闸拦下，
+    我们抱着 463 份拿到归零（-$69）；强平兜底只认全清仓，部分减仓够不到。
+    已持仓的 SELL 必须无视 paused——仓位因他而建，他离场即论点消失。"""
+    from polycopycat.engine.config import FilterConfig
+    from polycopycat.engine.signals import PAUSED_SIGNAL_DETAIL, SignalFilter
+    flt = SignalFilter(FilterConfig(max_signal_age_s=30, long_horizon_age_s=None))
+    # 持仓 + 暂停 + 超龄的 SELL：三重绕闸放行（离场优先的完整语义）
+    assert flt.check(_make_paused_signal(side="SELL", age_s=3600), holding=True)[0]
+    # 未持仓的 SELL：照旧被暂停闸拦（没仓可平，跟了反而开空敞口）
+    ok, reason = flt.check(_make_paused_signal(side="SELL"), holding=False)
+    assert not ok and reason == PAUSED_SIGNAL_DETAIL
+    # 暂停目标的 BUY：无论是否持仓都拦（暂停语义只让位于离场）
+    ok, reason = flt.check(_make_paused_signal(side="BUY"), holding=True)
+    assert not ok and reason == PAUSED_SIGNAL_DETAIL
+
+
 def test_holding_sell_bypasses_age_gate_end_to_end(rig):
     engine, ledger, notifier, _ = rig
     seed_buy(engine, ledger)  # 自己持有 tok1
